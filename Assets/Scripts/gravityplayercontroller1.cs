@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -8,10 +9,10 @@ using UnityEngine.InputSystem;
 /// 1) Asla zeminin içine girmemesini ve havada asılı kalmamasını,
 /// 2) Yerde zıplama/sekme yapmadan yağ gibi kayarak takla atmasını,
 /// 3) Havada bir noktaya doğru serbest düşerken yüksek düşüş hızlarına ulaşmasını,
-/// 4) Küçültülebilir Özel Ölüm Hitbox'ı (hazardHitboxScaleMultiplier) ile dikenlere/tuzaklara sadece
-///    gerçekten iç kısma değdiğinde ölüp başa dönmesini (Adil Hitbox / Gracie Hitbox),
-/// 5) GTA 5 Franklin "Focus / Manevra Modu" (Shift ile ekranı zoomlayıp zamanı yavaşlatan, havada manevra
-///    kabiliyetini katlayan ve yere değince dolan Enerji Barı sistemi) içeren 2D Karakter Kontrolcüsü.
+/// 4) Küçültülebilir Özel Ölüm Hitbox'ı (hazardHitboxScaleMultiplier) ile adil çarpışma sağlamasını,
+/// 5) GTA 5 Franklin "Focus / Manevra Modu" (Shift + Zoom + Zaman Yavaşlatma + Enerji Barı),
+/// 6) Havalı Kuyruk İzi (Trail Renderer) + Shift Modunda Ekran Kenarı Sinematik Atmosferi (Vignette/Tint)
+///    ve Cyberpunk/Celeste Tarzı HAYALET İZİ (Afterimage / Ghost Trail) içeren 2D Karakter Kontrolcüsü.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class GravityPlayerController : MonoBehaviour
@@ -112,7 +113,7 @@ public class GravityPlayerController : MonoBehaviour
     public float rotationSmoothSpeed = 18f;
 
     [Header("7. Ölüm Hitbox Küçültme (Hazard) ve Yeniden Doğma (Respawn)")]
-    [Tooltip("ÖLÜM HITBOX KÜÇÜLTME ORANI: 1.0 = Fiziksel boyutla aynı, 0.45 = Karakterin ölüm hitbox'ı %55 daha küçüktür! Dikenlerin yanından sıyırıp geçerken ölmezsin, sadece diken karakterin iç/merkez kısmına girerse ölürsün!")]
+    [Tooltip("ÖLÜM HITBOX KÜÇÜLTME ORANI: 1.0 = Fiziksel boyutla aynı, 0.45 = Karakterin ölüm hitbox'ı %55 daha küçüktür!")]
     [Range(0.1f, 1f)]
     public float hazardHitboxScaleMultiplier = 0.45f;
 
@@ -129,7 +130,7 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Barın maksimum kapasitesi (Örn: 100 birim). Yere değdiğin an otomatik olarak tamamen dolar!")]
     public float maxFocusEnergy = 100f;
 
-    [Tooltip("Shift'e basılı tutarken bar saniyede kaç birim tükensin? (Gerçek zamana göre: Örn 50 yaparsan 100'lük bar tam 2 saniyede biter, 25 yaparsan 4 saniyede biter!).")]
+    [Tooltip("Shift'e basılı tutarken bar saniyede kaç birim tükensin?")]
     public float focusDrainRatePerSecond = 45f;
 
     [Tooltip("Shift'e basıldığında oyun zamanı ne kadar yavaşlasın? (Örn: 0.35 = %65 yavaşlatma).")]
@@ -143,18 +144,61 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Kamera Zoom geçiş yumuşaklığı hızı.")]
     public float focusZoomLerpSpeed = 8f;
 
-    [Tooltip("FRANKLIN ETKİSİ: Shift basılıyken havadaki sağa/sola manevra ivmesi (Air Acceleration) kaç kat artsın? (Örn: 3.5 kat daha keskin dönüş!).")]
+    [Tooltip("FRANKLIN ETKİSİ: Shift basılıyken havadaki sağa/sola manevra ivmesi (Air Acceleration) kaç kat artsın?")]
     public float focusAirAccelerationMultiplier = 3.5f;
 
     [Tooltip("FRANKLIN ETKİSİ: Shift basılıyken havadaki maksimum yanal manevra hızı (Max Air Move Speed) kaç kat artsın?")]
     public float focusAirSpeedMultiplier = 1.45f;
 
-    [Tooltip("Shift basılıyken düşüş hızı biraz frenlensin mi? (0.65 = Düşüş hızını %35 dizginler ki dar aralıktan manevra yaparak geçebil, 1 = Düşüş hızına dokunmaz).")]
+    [Tooltip("Shift basılıyken düşüş hızı biraz frenlensin mi?")]
     [Range(0.2f, 1f)]
     public float focusFallSpeedDamping = 0.7f;
 
-    [Tooltip("Ekranda Odak/Manevra Barı gösterilsin mi? (Hiç Canvas kurmana gerek kalmadan otomatik çizer).")]
+    [Tooltip("Ekranda Odak/Manevra Barı gösterilsin mi?")]
     public bool showFocusBarUI = true;
+
+    [Header("9. Havalı Kuyruk İzi (Trail Effect) Ayarları")]
+    [Tooltip("Karakterin arkasında havalı ışık izi (Trail) çıksın mı?")]
+    public bool enablePlayerTrail = true;
+
+    [Tooltip("İz sadece havada süzülürken/düşerken mi çıksın (True), yoksa yerde yürürken de hep açık mı kalsın (False)?")]
+    public bool trailOnlyInAir = false;
+
+    [Tooltip("İzin ekranda kalma süresi / uzunluğu (Saniye - Örn: 0.35).")]
+    [Range(0.05f, 1.5f)]
+    public float trailDuration = 0.35f;
+
+    [Tooltip("İzin başlangıç kalınlığı (Karakterin arkasından çıkarkenki genişliği).")]
+    [Range(0.1f, 2f)]
+    public float trailStartWidth = 0.75f;
+
+    [Tooltip("Normal uçuş/hareket sırasındaki iz rengi (Varsayılan: Parlak Neon Yeşil/Turkuaz).")]
+    public Color normalTrailColor = new Color(0.2f, 1f, 0.55f, 0.85f);
+
+    [Tooltip("Shift (Franklin Focus) basılıyken izin dönüşeceği renk (Varsayılan: Parlak Altın Sarısı!).")]
+    public Color focusTrailColor = new Color(1f, 0.85f, 0.15f, 0.95f);
+
+    [Header("10. Shift Modu: Hayalet İzi (Afterimage) & Sinematik Vignette")]
+    [Tooltip("Shift (Focus) basılıyken karakterin arkasında Cyberpunk/Celeste tarzı yarı saydam Hayalet Kopyalar (Afterimage) bıraksın mı?")]
+    public bool enableFocusAfterimages = true;
+
+    [Tooltip("Hayalet kopyaların çıkma sıklığı (Gerçek saniye - Örn: 0.045 sn'de bir kopya bırakır).")]
+    [Range(0.015f, 0.2f)]
+    public float afterimageSpawnInterval = 0.045f;
+
+    [Tooltip("Her bir hayalet kopyanın ekranda eriyerek kaybolma süresi (Gerçek saniye).")]
+    [Range(0.1f, 1f)]
+    public float afterimageFadeDuration = 0.28f;
+
+    [Tooltip("Hayalet kopyaların rengi (Varsayılan: Parlak Turkuaz/Altın karışımı).")]
+    public Color afterimageColor = new Color(0.2f, 1f, 0.9f, 0.65f);
+
+    [Tooltip("Shift (Focus) basılıyken ekranın kenarlarında sinematik kararma ve odak atmosferi (Vignette) oluşsun mu?")]
+    public bool enableFocusScreenVignette = true;
+
+    [Tooltip("Ekran kenarı kararma (Vignette) yoğunluğu.")]
+    [Range(0f, 1f)]
+    public float vignetteIntensity = 0.65f;
 
     public bool IsFocusActive => isFocusActive;
     public float CurrentFocusEnergyNormalized => maxFocusEnergy > 0f ? Mathf.Clamp01(currentFocusEnergy / maxFocusEnergy) : 0f;
@@ -162,7 +206,11 @@ public class GravityPlayerController : MonoBehaviour
     private Rigidbody2D rb;
     private Collider2D playerCollider;
     private CircleCollider2D circleCollider;
+    private SpriteRenderer playerSpriteRenderer;
     private PhysicsMaterial2D zeroFrictionBounceMat;
+    private TrailRenderer playerTrail;
+    private Gradient normalTrailGradient;
+    private Gradient focusTrailGradient;
     private Camera mainCam;
     private Vector2 moveInput;
     private bool isGrounded;
@@ -180,6 +228,9 @@ public class GravityPlayerController : MonoBehaviour
     private float defaultFixedDeltaTime = 0.02f;
     private float baseCameraOrthoSize = -1f;
     private Texture2D uiWhiteTex;
+    private Texture2D vignetteTex;
+    private float currentVignetteAlpha = 0f;
+    private float afterimageTimer = 0f;
 
     private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
     private readonly Collider2D[] hazardOverlapHits = new Collider2D[8];
@@ -189,6 +240,7 @@ public class GravityPlayerController : MonoBehaviour
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        playerSpriteRenderer = GetComponent<SpriteRenderer>();
         rb.freezeRotation = true;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
@@ -203,6 +255,8 @@ public class GravityPlayerController : MonoBehaviour
         rb.sharedMaterial = zeroFrictionBounceMat;
 
         SetupSmoothDynamicCircleCollider();
+        SetupPlayerTrailRenderer();
+        GenerateVignetteTexture();
 
         if (TryGetComponent<LineRenderer>(out LineRenderer oldLine))
         {
@@ -238,6 +292,176 @@ public class GravityPlayerController : MonoBehaviour
 
         circleCollider.sharedMaterial = zeroFrictionBounceMat;
         playerCollider = circleCollider;
+    }
+
+    private void SetupPlayerTrailRenderer()
+    {
+        playerTrail = GetComponent<TrailRenderer>();
+        if (playerTrail == null)
+        {
+            playerTrail = gameObject.AddComponent<TrailRenderer>();
+        }
+
+        Shader spriteShader = Shader.Find("Sprites/Default");
+        if (spriteShader != null)
+        {
+            playerTrail.material = new Material(spriteShader);
+        }
+
+        if (playerSpriteRenderer != null)
+        {
+            playerTrail.sortingLayerID = playerSpriteRenderer.sortingLayerID;
+            playerTrail.sortingOrder = playerSpriteRenderer.sortingOrder - 1;
+        }
+
+        playerTrail.time = trailDuration;
+        playerTrail.minVertexDistance = 0.08f;
+        playerTrail.numCornerVertices = 5;
+        playerTrail.numCapVertices = 5;
+
+        AnimationCurve widthCurve = new AnimationCurve();
+        widthCurve.AddKey(0f, trailStartWidth);
+        widthCurve.AddKey(0.4f, trailStartWidth * 0.55f);
+        widthCurve.AddKey(1f, 0f);
+        playerTrail.widthCurve = widthCurve;
+
+        RebuildTrailGradients();
+        playerTrail.colorGradient = normalTrailGradient;
+        playerTrail.emitting = enablePlayerTrail;
+    }
+
+    private void RebuildTrailGradients()
+    {
+        normalTrailGradient = CreateFadeGradient(normalTrailColor);
+        focusTrailGradient = CreateFadeGradient(focusTrailColor);
+    }
+
+    private Gradient CreateFadeGradient(Color baseColor)
+    {
+        Gradient grad = new Gradient();
+        grad.SetKeys(
+            new GradientColorKey[]
+            {
+                new GradientColorKey(baseColor, 0f),
+                new GradientColorKey(Color.Lerp(baseColor, Color.white, 0.25f), 0.3f),
+                new GradientColorKey(baseColor, 1f)
+            },
+            new GradientAlphaKey[]
+            {
+                new GradientAlphaKey(baseColor.a, 0f),
+                new GradientAlphaKey(baseColor.a * 0.45f, 0.5f),
+                new GradientAlphaKey(0f, 1f)
+            }
+        );
+        return grad;
+    }
+
+    /// <summary>
+    /// Shift (Franklin Focus) moduna girildiğinde ekranın ortasını açık bırakıp köşelerini
+    /// yumuşakça karartan ve hafif sinematik bir odak veren radial Vignette dokusunu kodla üretir.
+    /// </summary>
+    private void GenerateVignetteTexture()
+    {
+        int size = 128;
+        vignetteTex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        vignetteTex.wrapMode = TextureWrapMode.Clamp;
+
+        Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
+        float maxDist = size * 0.5f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dist = Vector2.Distance(new Vector2(x, y), center) / maxDist;
+                // Merkezde (0..0.45) tamamen şeffaf, kenarlara (0.45..1.1) doğru yumuşak koyu lacivert/altın sinematik geçiş
+                float alpha = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.42f, 1.05f, dist));
+                vignetteTex.SetPixel(x, y, new Color(0.02f, 0.05f, 0.1f, alpha));
+            }
+        }
+        vignetteTex.Apply();
+    }
+
+    private void UpdatePlayerTrailEffect()
+    {
+        if (playerTrail == null) return;
+
+        if (!enablePlayerTrail)
+        {
+            playerTrail.emitting = false;
+            return;
+        }
+
+        playerTrail.time = trailDuration;
+        playerTrail.widthMultiplier = 1f;
+
+        bool shouldEmit = trailOnlyInAir ? !isGrounded : (rb.linearVelocity.sqrMagnitude > 0.5f || !isGrounded);
+        playerTrail.emitting = shouldEmit;
+
+        RebuildTrailGradients();
+        playerTrail.colorGradient = isFocusActive ? focusTrailGradient : normalTrailGradient;
+    }
+
+    /// <summary>
+    /// Shift (Focus) aktifken karakterin o anki pozisyonunda ve dönüş açısında
+    /// yarı saydam bir Hayalet Kopya (Afterimage / Ghost) bırakır ve yavaşça eriterek yok eder!
+    /// </summary>
+    private void UpdateAfterimageTrail()
+    {
+        if (!enableFocusAfterimages || !isFocusActive || playerSpriteRenderer == null || playerSpriteRenderer.sprite == null)
+        {
+            afterimageTimer = 0f;
+            return;
+        }
+
+        afterimageTimer += Time.unscaledDeltaTime;
+        if (afterimageTimer >= afterimageSpawnInterval)
+        {
+            afterimageTimer = 0f;
+            SpawnSingleAfterimage();
+        }
+    }
+
+    private void SpawnSingleAfterimage()
+    {
+        GameObject ghostObj = new GameObject("PlayerAfterimage");
+        ghostObj.transform.position = transform.position;
+        ghostObj.transform.rotation = transform.rotation;
+        ghostObj.transform.localScale = transform.lossyScale;
+
+        SpriteRenderer ghostSr = ghostObj.AddComponent<SpriteRenderer>();
+        ghostSr.sprite = playerSpriteRenderer.sprite;
+        ghostSr.sortingLayerID = playerSpriteRenderer.sortingLayerID;
+        ghostSr.sortingOrder = playerSpriteRenderer.sortingOrder - 2;
+        ghostSr.color = afterimageColor;
+
+        StartCoroutine(FadeAndDestroyAfterimage(ghostSr, afterimageFadeDuration));
+    }
+
+    private IEnumerator FadeAndDestroyAfterimage(SpriteRenderer ghostSr, float duration)
+    {
+        float elapsed = 0f;
+        Color startColor = ghostSr.color;
+        Vector3 startScale = ghostSr.transform.localScale;
+
+        while (elapsed < duration && ghostSr != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+
+            Color c = startColor;
+            c.a = Mathf.Lerp(startColor.a, 0f, t);
+            ghostSr.color = c;
+
+            // Hayalet izi erirken çok hafif küçülür
+            ghostSr.transform.localScale = Vector3.Lerp(startScale, startScale * 0.85f, t);
+            yield return null;
+        }
+
+        if (ghostSr != null)
+        {
+            Destroy(ghostSr.gameObject);
+        }
     }
 
     private void OnEnable()
@@ -313,18 +537,15 @@ public class GravityPlayerController : MonoBehaviour
         }
 
         HandleFocusAbilityAndCameraZoom(shiftHeld);
-
         UpdateVisualTumbleAndDynamicCollider();
+        UpdatePlayerTrailEffect();
+        UpdateAfterimageTrail();
+
+        // Ekran kenarı sinematik Vignette alpha geçişi
+        float targetVig = (isFocusActive && enableFocusScreenVignette) ? vignetteIntensity : 0f;
+        currentVignetteAlpha = Mathf.MoveTowards(currentVignetteAlpha, targetVig, Time.unscaledDeltaTime * 5f);
     }
 
-    /// <summary>
-    /// ÖZEL KÜÇÜLTÜLMÜŞ ÖLÜM HITBOX KONTROLÜ:
-    /// Karakterin duvarlarda yürümesini sağlayan ana CircleCollider2D'yi küçültmeden,
-    /// sadece dikenler/tuzaklar için karakterin merkezinde daha küçük bir iç çember (Lethal Core) kontrol eder!
-    /// Ayrıca sahnedeki dikenlerin Collider'ı Trigger değilse bile karaktere çarptığında sektirmemesi için
-    /// dikenlerle dış çemberin fiziksel çarpışmasını (IgnoreCollision) otomatik devre dışı bırakır,
-    /// sadece diken bu içteki küçük kırmızı çembere değdiğinde öldürür!
-    /// </summary>
     private float GetLethalHitboxRadiusWorld()
     {
         float baseRadius = ovalHalfWidth * Mathf.Clamp(hazardHitboxScaleMultiplier, 0.1f, 1f);
@@ -351,10 +572,6 @@ public class GravityPlayerController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Dıştan kontrol (örn. HazardZone.cs scripti üzerinden) geldiğinde de diken gerçekten
-    /// küçültülmüş iç ölüm hitbox'ına (Lethal Core) girdi mi diye kontrol eder!
-    /// </summary>
     public bool IsColliderTouchingLethalCore(Collider2D hazardCollider)
     {
         if (hazardCollider == null) return false;
@@ -570,7 +787,6 @@ public class GravityPlayerController : MonoBehaviour
             int hitCount = playerCollider.Cast(downDir, filter, castHits, groundCheckExtraDistance);
             if (hitCount > 0)
             {
-                // Eğer altımızdaki obje bir tuzak/spike değilse zemin kabul et
                 for (int i = 0; i < hitCount; i++)
                 {
                     if (!IsHazardObject(castHits[i].collider.gameObject))
@@ -602,9 +818,6 @@ public class GravityPlayerController : MonoBehaviour
     {
         if (IsHazardObject(collision.gameObject))
         {
-            // Eğer dikenin ucu dış fiziksel collider'a değdi ama henüz küçültülmüş iç ölüm hitbox'ına (Lethal Core)
-            // girmediyse, dikenin karakteri fiziksel olarak durdurmaması için çarpışmayı Trigger'a çevir
-            // ve sadece iç çekirdeğe değdiğinde öldür!
             if (IsColliderTouchingLethalCore(collision.collider))
             {
                 DieAndRespawn();
@@ -710,6 +923,7 @@ public class GravityPlayerController : MonoBehaviour
     {
         SetFocusAbilityState(false);
         currentFocusEnergy = maxFocusEnergy;
+        currentVignetteAlpha = 0f;
 
         if (mainCam != null && mainCam.orthographic && baseCameraOrthoSize > 0f)
         {
@@ -725,11 +939,23 @@ public class GravityPlayerController : MonoBehaviour
             }
         }
 
+        if (playerTrail != null)
+        {
+            playerTrail.emitting = false;
+            playerTrail.Clear();
+        }
+
         Vector3 spawnPos = customSpawnPoint != null ? customSpawnPoint.position : initialSpawnPosition;
         rb.linearVelocity = Vector2.zero;
         rb.angularVelocity = 0f;
         transform.position = spawnPos;
         transform.rotation = initialSpawnRotation;
+
+        if (playerTrail != null)
+        {
+            playerTrail.Clear();
+            playerTrail.emitting = enablePlayerTrail;
+        }
 
         isGrounded = false;
         hasActiveSurfaceContact = false;
@@ -818,7 +1044,6 @@ public class GravityPlayerController : MonoBehaviour
             int wallHits = playerCollider.Cast(moveDir, wallFilter, castHits, 0.08f);
             for (int i = 0; i < wallHits; i++)
             {
-                // Eğer önümüzdeki şey bir spike/tuzak değilse ve dik bir duvarsa yürüme itişini kes
                 if (!IsHazardObject(castHits[i].collider.gameObject) && Vector2.Dot(castHits[i].normal, -moveDir) > 0.7f)
                 {
                     tangentInput = 0f;
@@ -980,13 +1205,19 @@ public class GravityPlayerController : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        // Scene ekranında Player'ı seçtiğinde içteki KÜÇÜK KIRMIZI ÖLÜM HITBOX'ını gözünle görebilmen için!
         Gizmos.color = new Color(1f, 0.15f, 0.15f, 0.9f);
         Gizmos.DrawWireSphere(transform.position, GetLethalHitboxRadiusWorld());
     }
 
     private void OnGUI()
     {
+        // 1. Shift (Focus) aktifken ekran kenarı sinematik kararma/odak (Vignette) çizimi
+        if (currentVignetteAlpha > 0.01f && vignetteTex != null)
+        {
+            GUI.color = new Color(1f, 1f, 1f, currentVignetteAlpha);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), vignetteTex, ScaleMode.StretchToFill, true);
+        }
+
         if (!enableFocusAbility || !showFocusBarUI) return;
 
         if (uiWhiteTex == null)

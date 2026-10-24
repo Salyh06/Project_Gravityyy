@@ -9124,7 +9124,7 @@ MonoBehaviour:
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0
@@ -9229,6 +9229,8 @@ MonoBehaviour:
   useVelocityLookAhead: 1
   lookAheadFactor: 0.12
   maxLookAheadDistance: 3
+  enableScreenShake: 1
+  shakeIntensityMultiplier: 1
 --- !u!1 &537720224
 GameObject:
   m_ObjectHideFlags: 0
@@ -13532,6 +13534,55 @@ Transform:
   - {fileID: 1244448194}
   - {fileID: 1832759628}
   - {fileID: 979267184}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1389230735
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1389230737}
+  - component: {fileID: 1389230736}
+  m_Layer: 0
+  m_Name: Global Volume
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1389230736
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1389230735}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.Volume
+  m_IsGlobal: 1
+  priority: 0
+  blendDistance: 0
+  weight: 1
+  sharedProfile: {fileID: 11400000, guid: 03f62c473a6024455a8d04948d385eda, type: 2}
+--- !u!4 &1389230737
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1389230735}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.014545, y: -16.839798, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1413284838
@@ -29056,7 +29107,7 @@ Transform:
   m_GameObject: {fileID: 2069081973}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -18, y: 0, z: 0}
+  m_LocalPosition: {x: -18.009, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -29270,10 +29321,33 @@ MonoBehaviour:
   ovalHalfWidth: 0.5
   ovalHalfHeight: 1
   rotationSmoothSpeed: 18
+  hazardHitboxScaleMultiplier: 0.45
   customSpawnPoint: {fileID: 0}
   hazardLayer:
     serializedVersion: 2
     m_Bits: 0
+  enableFocusAbility: 1
+  maxFocusEnergy: 100
+  focusDrainRatePerSecond: 45
+  focusTimeScale: 0.35
+  focusCameraZoomMultiplier: 0.78
+  focusZoomLerpSpeed: 8
+  focusAirAccelerationMultiplier: 3.5
+  focusAirSpeedMultiplier: 1.45
+  focusFallSpeedDamping: 0.7
+  showFocusBarUI: 1
+  enablePlayerTrail: 1
+  trailOnlyInAir: 0
+  trailDuration: 0.35
+  trailStartWidth: 0.75
+  normalTrailColor: {r: 0.2, g: 1, b: 0.55, a: 0.85}
+  focusTrailColor: {r: 1, g: 0.85, b: 0.15, a: 0.95}
+  enableFocusAfterimages: 1
+  afterimageSpawnInterval: 0.045
+  afterimageFadeDuration: 0.28
+  afterimageColor: {r: 0.2, g: 1, b: 0.9, a: 0.65}
+  enableFocusScreenVignette: 1
+  vignetteIntensity: 0.65
 --- !u!50 &2124529647
 Rigidbody2D:
   serializedVersion: 5
@@ -29370,7 +29444,7 @@ Transform:
   m_GameObject: {fileID: 2124529644}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -7.08, y: -28.92, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -29880,3 +29954,4 @@ SceneRoots:
   - {fileID: 1510527715}
   - {fileID: 457700602}
   - {fileID: 594864596}
+  - {fileID: 1389230737}
