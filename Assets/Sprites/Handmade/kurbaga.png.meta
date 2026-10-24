@@ -1,16 +1,19 @@
 fileFormatVersion: 2
-guid: a31fe3c64be8016459ceafda478b418d
+guid: 88ee57a3cb8f21847a3cf0dab0056a57
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 4689240166119133576
-    second: pixilart-sprite_0
+      213: -6897377285344322506
+    second: kurbaga_0
   - first:
-      213: 4521018998857404175
-    second: pixilart-sprite_1
+      213: -881220507445662749
+    second: kurbaga_1
   - first:
-      213: -4621546931983276131
-    second: pixilart-sprite_2
+      213: 6642364269516366141
+    second: kurbaga_2
+  - first:
+      213: -6301269234085890281
+    second: kurbaga_3
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -121,13 +124,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: pixilart-sprite_0
+      name: kurbaga_0
       rect:
         serializedVersion: 2
-        x: 16
-        y: 21
-        width: 16
-        height: 16
+        x: 78
+        y: 28
+        width: 48
+        height: 48
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -136,20 +139,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 88156002617831140800000000000000
-      internalID: 4689240166119133576
+      spriteID: 63c143127e79740a0800000000000000
+      internalID: -6897377285344322506
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: pixilart-sprite_1
+      name: kurbaga_1
       rect:
         serializedVersion: 2
-        x: 61
-        y: 21
-        width: 16
-        height: 16
+        x: 478
+        y: 28
+        width: 48
+        height: 48
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -158,20 +161,20 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: f0f00b973d2edbe30800000000000000
-      internalID: 4521018998857404175
+      spriteID: 3eb69ec0e9645c3f0800000000000000
+      internalID: -881220507445662749
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: pixilart-sprite_2
+      name: kurbaga_2
       rect:
         serializedVersion: 2
-        x: 106
-        y: 27
-        width: 16
-        height: 16
+        x: 878
+        y: 28
+        width: 48
+        height: 48
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -180,8 +183,30 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: d9727562d87fcdfb0800000000000000
-      internalID: -4621546931983276131
+      spriteID: d3125414c1b6e2c50800000000000000
+      internalID: 6642364269516366141
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: kurbaga_3
+      rect:
+        serializedVersion: 2
+        x: 1278
+        y: 28
+        width: 48
+        height: 48
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 717763464056d88a0800000000000000
+      internalID: -6301269234085890281
       vertices: []
       indices: 
       edges: []
@@ -190,7 +215,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 1bb1978d19a9ef144a613041cf80df21
+    spriteID: f21785711d9f4a4409b7a2811b51f9b7
     internalID: 0
     vertices: []
     indices: 
@@ -200,9 +225,11 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      pixilart-sprite_0: 4689240166119133576
-      pixilart-sprite_1: 4521018998857404175
-      pixilart-sprite_2: -4621546931983276131
+      kurbaga_0: -6897377285344322506
+      kurbaga_1: -881220507445662749
+      kurbaga_2: 6642364269516366141
+      kurbaga_3: -6301269234085890281
+      kurbaga_4: -133186050
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

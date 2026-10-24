@@ -1,13 +1,16 @@
 fileFormatVersion: 2
-guid: b8c33628f3641544a95535855a856b4c
+guid: fca32922b689b8249823a86f2b7d66f9
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 7506424316134843610
-    second: pixil-frame-0(1)_0
+      213: -8770330528942057091
+    second: kus_0
   - first:
-      213: -9050198632686638522
-    second: pixil-frame-0(1)_1
+      213: -3911355082212287410
+    second: kus_1
+  - first:
+      213: -8603823818600619074
+    second: kus_2
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -118,45 +121,67 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: pixil-frame-0(1)_0
+      name: kus_0
       rect:
         serializedVersion: 2
-        x: 9
-        y: 25
-        width: 19
-        height: 13
+        x: 16
+        y: 21
+        width: 16
+        height: 16
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: ad46290152d2c2860800000000000000
-      internalID: 7506424316134843610
+      spriteID: d7915a3e9d6894680800000000000000
+      internalID: -8770330528942057091
       vertices: []
       indices: 
       edges: []
       weights: []
     - serializedVersion: 2
-      name: pixil-frame-0(1)_1
+      name: kus_1
       rect:
         serializedVersion: 2
-        x: 28
-        y: 25
-        width: 19
-        height: 13
+        x: 61
+        y: 21
+        width: 16
+        height: 16
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 64aacf72b4c376280800000000000000
-      internalID: -9050198632686638522
+      spriteID: e4c5156a64318b9c0800000000000000
+      internalID: -3911355082212287410
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: kus_2
+      rect:
+        serializedVersion: 2
+        x: 106
+        y: 27
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: eb3e34e62d3199880800000000000000
+      internalID: -8603823818600619074
       vertices: []
       indices: 
       edges: []
@@ -165,7 +190,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 8ca98d9e9f749ab459ce92785ace0cb3
     internalID: 0
     vertices: []
     indices: 
@@ -175,8 +200,9 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      pixil-frame-0(1)_0: 7506424316134843610
-      pixil-frame-0(1)_1: -9050198632686638522
+      kus_0: -8770330528942057091
+      kus_1: -3911355082212287410
+      kus_2: -8603823818600619074
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
