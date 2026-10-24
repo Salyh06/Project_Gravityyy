@@ -115,10 +115,24 @@ public class GravityPlayerController : MonoBehaviour
     private bool hasActiveSurfaceContact = false;
     private bool isAligningToSurface = false;
     private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
+    [Header("Respawn Settings")]
+    [SerializeField] private Transform respawnPoint;
+
+    private Vector2 initialSpawnPosition;
+    private Quaternion initialSpawnRotation;
+    private float lastRespawnTime = -10f;
+    
+    private float gravityScaleBeforeHoney;
+    private HoneySurface2D activeHoney;
+    private Vector2 activeHoneyNormal = Vector2.up;
+    private float honeyJumpCooldown;
+
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        initialSpawnPosition = rb.position;
+        initialSpawnRotation = transform.rotation;
         rb.freezeRotation = true;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
@@ -181,6 +195,7 @@ public class GravityPlayerController : MonoBehaviour
 
     private void OnDisable()
     {
+        ClearHoney();
         if (GravityManager.Instance != null)
         {
             GravityManager.Instance.OnGravityChanged -= HandleGravityChanged;
@@ -200,10 +215,23 @@ public class GravityPlayerController : MonoBehaviour
 
         // Zıplama: Yerdeysek VEYA Coyote Time içindeysek zıpla
         bool canJump = isGrounded || (Time.time - lastGroundedTime <= jumpCoyoteTime && Time.time - lastJumpTime > 0.22f);
-        if (jumpPressed && canJump)
+        
+        if (jumpPressed && activeHoney != null)
+        {
+            Vector2 jumpDirection = activeHoneyNormal;
+
+            ClearHoney();
+
+            honeyJumpCooldown = Time.time + 0.3f;
+            lastJumpTime = Time.time;
+
+            rb.linearVelocity = jumpDirection * jumpForce;
+        }
+        else if (jumpPressed && canJump)
         {
             Jump();
         }
+
 
         if (firePressed)
         {
@@ -266,8 +294,32 @@ public class GravityPlayerController : MonoBehaviour
         }
     }
 
+    
     private void FixedUpdate()
     {
+        if (activeHoney != null)
+        {
+            // Temas kisa sureli kesilse bile yuzeyin yakinindeyken yapismayi surdur.
+            // Karakter donunce CircleCollider2D yaricapi degistigi icin bu gerekli.
+            float radius = circleCollider.radius * Mathf.Max(
+                Mathf.Abs(transform.lossyScale.x),
+                Mathf.Abs(transform.lossyScale.y)
+            );
+
+            Vector2 correction;
+            if (activeHoney.TryGetAttachmentCorrection(
+                    rb.position, radius, activeHoneyNormal, out correction))
+            {
+                if (correction.sqrMagnitude > 0.000001f)
+                    rb.position += correction;
+
+                ApplyHoneyMovement();
+                return;
+            }
+
+            ClearHoney();
+        }
+
         ApplyMovementAndTerminalVelocity();
     }
 
@@ -330,6 +382,11 @@ public class GravityPlayerController : MonoBehaviour
 
     private void CheckGrounded()
     {
+        if (activeHoney != null)
+        {
+            isGrounded = false;
+            return;
+        }
         if (Time.time - lastJumpTime < 0.08f)
         {
             isGrounded = false;
@@ -372,6 +429,7 @@ public class GravityPlayerController : MonoBehaviour
 
     private void OnCollisionStay2D(Collision2D collision)
     {
+        if (activeHoney != null) return;
         if (((1 << collision.gameObject.layer) & groundLayer) != 0 && collision.contactCount > 0)
         {
             Vector2 currentDown = GravityManager.Instance != null
@@ -578,7 +636,7 @@ public class GravityPlayerController : MonoBehaviour
     {
         UpdateTargetRotation(newGravityDir);
 
-        if (isAligningToSurface) return;
+        if (isAligningToSurface || activeHoney != null) return;
 
         Vector2 currentVel = rb.linearVelocity;
         float currentSpeed = currentVel.magnitude;
@@ -605,4 +663,158 @@ public class GravityPlayerController : MonoBehaviour
         float angle = Mathf.Atan2(upDir.y, upDir.x) * Mathf.Rad2Deg - 90f;
         targetRotation = Quaternion.Euler(0f, 0f, angle);
     }
+    
+    public void Respawn()
+    {
+        if (Time.time - lastRespawnTime < 0.2f)
+            return;
+
+        lastRespawnTime = Time.time;
+        GravityProjectile.ClearAll();
+        ClearHoney();
+        honeyJumpCooldown = 0f;
+
+        isGrounded = false;
+        hasActiveSurfaceContact = false;
+        isAligningToSurface = false;
+
+        lastGroundedTime = -10f;
+        lastJumpTime = -10f;
+
+        currentAirThrowsUsed = 0;
+        moveInput = Vector2.zero;
+
+        // Yerçekimini aşağı sıfırla
+        if (GravityManager.Instance != null)
+        {
+            GravityManager.Instance.SetGravityDirection(Vector2.down);
+        }
+
+        // Başlangıç konumu
+        rb.position = respawnPoint != null
+            ? (Vector2)respawnPoint.position
+            : initialSpawnPosition;
+        
+        if (Camera.main != null &&
+            Camera.main.TryGetComponent(out CameraFollow2D cameraFollow))
+        {
+            cameraFollow.SnapToPlayer();
+        }
+
+
+        rb.linearVelocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        transform.rotation = respawnPoint != null
+            ? respawnPoint.rotation
+            : initialSpawnRotation;
+
+        UpdateTargetRotation(Vector2.down);
+    }
+
+    public void Bounce(float speed)
+    {
+        Vector2 gravityDirection = GravityManager.Instance != null
+            ? GravityManager.Instance.CurrentGravityDirection.normalized
+            : Vector2.down;
+
+        Vector2 bounceDirection = -gravityDirection;
+
+        // Yerçekiminin tersindeki mevcut hızı hesapla
+        float currentUpSpeed =
+            Vector2.Dot(rb.linearVelocity, bounceDirection);
+
+        // Yatay momentumu koruyarak zıplat
+        float speedIncrease = Mathf.Max(0f, speed - currentUpSpeed);
+
+        rb.linearVelocity += bounceDirection * speedIncrease;
+
+        // Kontrolcünün zıplama hızını sıfırlamasını engelle
+        isGrounded = false;
+        hasActiveSurfaceContact = false;
+
+        lastGroundedTime = -10f;
+        lastJumpTime = Time.time;
+    }
+    
+    // Bal yuzeyine temas tek bir fiziksel collider ile algilanir.
+    // Normal, yercekimi yerine temas edilen bal yuzeyinden gelir.
+    public void EnterHoney(HoneySurface2D honey, Vector2 surfaceNormal)
+    {
+        if (honey == null || Time.time < honeyJumpCooldown)
+            return;
+
+        Vector2 normal = surfaceNormal.sqrMagnitude > 0.0001f
+            ? surfaceNormal.normalized
+            : Vector2.up;
+
+        if (activeHoney == null)
+        {
+            gravityScaleBeforeHoney = rb.gravityScale;
+            rb.gravityScale = 0f;
+        }
+
+        bool newSurface = activeHoney != honey ||
+            Vector2.Dot(activeHoneyNormal, normal) < 0.99f;
+
+        activeHoney = honey;
+        activeHoneyNormal = normal;
+
+        if (newSurface)
+        {
+            Vector2 tangent = new Vector2(-normal.y, normal.x);
+            float tangentialSpeed = Vector2.Dot(rb.linearVelocity, tangent);
+            rb.linearVelocity = tangent * Mathf.Clamp(
+                tangentialSpeed, -honey.moveSpeed, honey.moveSpeed
+            );
+        }
+
+        isGrounded = false;
+        hasActiveSurfaceContact = false;
+    }
+
+    public void ExitHoney(HoneySurface2D honey)
+    {
+        if (activeHoney != honey)
+            return;
+
+        ClearHoney();
+    }
+
+    public void ClearHoney()
+    {
+        if (activeHoney == null)
+            return;
+
+        activeHoney = null;
+        rb.gravityScale = gravityScaleBeforeHoney;
+    }
+
+    private void ApplyHoneyMovement()
+    {
+        Vector2 normal = activeHoneyNormal;
+        Vector2 tangent = new Vector2(-normal.y, normal.x);
+
+        float input = Vector2.Dot(moveInput, tangent);
+        float gravitySlide = Vector2.Dot(
+            Physics2D.gravity * gravityScaleBeforeHoney, tangent
+        ) * activeHoney.gravitySlideMultiplier;
+
+        float targetSpeed = Mathf.Clamp(
+            input * activeHoney.moveSpeed + gravitySlide,
+            -activeHoney.moveSpeed,
+            activeHoney.moveSpeed
+        );
+
+        float currentSpeed = Vector2.Dot(rb.linearVelocity, tangent);
+        float newSpeed = Mathf.MoveTowards(
+            currentSpeed,
+            targetSpeed,
+            activeHoney.slideAcceleration * Time.fixedDeltaTime
+        );
+
+        // Yuzeye dogru bas: kati collider iceri girmeyi engeller.
+        rb.linearVelocity = tangent * newSpeed - normal * activeHoney.stickSpeed;
+    }
+
 }

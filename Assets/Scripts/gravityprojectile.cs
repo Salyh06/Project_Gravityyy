@@ -78,4 +78,26 @@ public class GravityProjectile : MonoBehaviour
             Destroy(gameObject);
         }
     }
+    
+    public static void ClearAll()
+    {
+        GravityProjectile[] projectiles =
+            FindObjectsByType<GravityProjectile>(
+                FindObjectsSortMode.None
+            );
+
+        foreach (GravityProjectile projectile in projectiles)
+        {
+            projectile.hasTriggered = true;
+
+            Rigidbody2D body =
+                projectile.GetComponent<Rigidbody2D>();
+
+            if (body != null)
+                body.simulated = false;
+
+            Destroy(projectile.gameObject);
+        }
+    }
+
 }
