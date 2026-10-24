@@ -5,10 +5,10 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// 360 derece değişen yerçekimine uyum sağlayan, Oval (Capsule) karakterin dönerken:
-/// 1) Asla zeminin içine girmemesini,
-/// 2) Asla havada asılı kalmamasını,
-/// 3) Yerde zıplama/sekme yapmadan yağ gibi kayarak takla atmasını,
-/// 4) Duvarlara takılıp tırmanmamasını sağlayan Dinamik Elips Yarıçaplı 2D Karakter Kontrolcüsü.
+/// 1) Asla zeminin içine girmemesini ve havada asılı kalmamasını,
+/// 2) Yerde zıplama/sekme yapmadan yağ gibi kayarak takla atmasını,
+/// 3) Havada bir noktaya doğru serbest düşerken çok daha hızlı ivmelenip yüksek düşüş hızlarına (Fast Fall & Gravity Shift Boost) ulaşmasını,
+/// 4) Sadece senin elle belirlediğin tehlike objelerine (HazardZone scripti ekli veya Hazard Layer/Tag'li objelere) değdiğinde ölüp başa dönmesini sağlayan 2D Karakter Kontrolcüsü.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class GravityPlayerController : MonoBehaviour
@@ -21,8 +21,11 @@ public class GravityPlayerController : MonoBehaviour
     }
 
     [Header("1. Hareket ve İvmelenme (Acceleration & Momentum)")]
-    [Tooltip("Ulaşılabilecek maksimum yürüme/süzülme hızı.")]
-    public float maxMoveSpeed = 10f;
+    [Tooltip("Yerde yürürken ulaşılabilecek maksimum hız.")]
+    public float maxMoveSpeed = 12f;
+
+    [Tooltip("Havada düşerken/süzülürken ulaşılabilecek maksimum yanal manevra hızı.")]
+    public float maxAirMoveSpeed = 16f;
 
     [Tooltip("Yerdeyken maksimum hıza ulaşma ivmesi.")]
     public float groundAcceleration = 65f;
@@ -31,20 +34,26 @@ public class GravityPlayerController : MonoBehaviour
     public float groundDeceleration = 70f;
 
     [Tooltip("Havadaki (düşerken) hızlanma ivmesi.")]
-    public float airAcceleration = 40f;
+    public float airAcceleration = 55f;
 
     [Tooltip("Havada tuşu bıraktığında yatay momentumun ne kadar korunacağı (0 = havada hiç yavaşlamaz).")]
-    public float airDeceleration = 12f;
+    public float airDeceleration = 8f;
 
-    [Header("2. Zıplama ve Takla Toleransı (Coyote Time)")]
+    [Header("2. Zıplama ve Hızlı Serbest Düşüş (Fast Fall)")]
     [Tooltip("Zıplama kuvveti (yerçekiminin tersi yönünde).")]
-    public float jumpForce = 14f;
+    public float jumpForce = 15f;
 
     [Tooltip("Zıplama tolerans süresi (saniye).")]
     public float jumpCoyoteTime = 0.2f;
 
-    [Tooltip("Sürekli düşerek ilerlerken ulaşılabilecek maksimum düşüş hızı (Terminal Velocity).")]
-    public float maxFallSpeed = 22f;
+    [Tooltip("Havada serbest düşerken ulaşılabilecek MAKSİMUM düşüş hızı (Terminal Velocity).")]
+    public float maxFallSpeed = 48f;
+
+    [Tooltip("Karakter havada düşerken yerçekimini kaç kat daha güçlü hissetsin? (1 = normal, 2.5 = 2.5 kat daha hızlı ivmelenerek düşer!).")]
+    public float fallGravityMultiplier = 2.6f;
+
+    [Tooltip("Küre bir duvara çarpıp yerçekimi yönü değiştiği anda karaktere yeni düşüş yönünde verilecek ANINDA başlangıç fırlama hızı.")]
+    public float gravityShiftInitialFallBoost = 16f;
 
     [Header("3. Yerçekimi Değişiminde Momentum Davranışı")]
     [Tooltip("Küre duvara çarpıp yerçekimi değiştiğinde karakterin mevcut hızına ne olsun?")]
@@ -52,7 +61,7 @@ public class GravityPlayerController : MonoBehaviour
 
     [Tooltip("KeepWorldMomentum veya RedirectSpeedToNewDown seçiliyse, geçiş anında eski hızın yüzde kaçı korunsun?")]
     [Range(0f, 2f)]
-    public float momentumRetentionMultiplier = 0.85f;
+    public float momentumRetentionMultiplier = 0.9f;
 
     [Header("4. Zemin Kontrolü ve Yüzeye Hizalanma (R / Sağ Tık)")]
     [Tooltip("İsteğe bağlı alt nokta.")]
@@ -75,10 +84,10 @@ public class GravityPlayerController : MonoBehaviour
     public Transform throwOrigin;
 
     [Tooltip("Merminin uçuş hızını doğrudan buradan çarpan olarak değiştirebilirsin.")]
-    public float projectileSpeedMultiplier = 1f;
+    public float projectileSpeedMultiplier = 1.6f;
 
     [Tooltip("Karakterin kendi hareket hızı fırlatılan mermiye eklensin mi?")]
-    public bool inheritPlayerMomentumOnThrow = false;
+    public bool inheritPlayerMomentumOnThrow = true;
 
     [Tooltip("Havada yere değmeden kaç kez fırlatma yapılabilir? (0 = Sınırsız)")]
     public int maxAirThrows = 0;
@@ -99,6 +108,13 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Roll Visually Like Ball kapalıysa, karakterin yeni yerçekimi yönüne dönme hızı.")]
     public float rotationSmoothSpeed = 18f;
 
+    [Header("7. Ölüm (Hazard) ve Yeniden Doğma (Respawn)")]
+    [Tooltip("İsteğe bağlı: Özel bir doğma noktası belirlemek istersen buraya sürükle. Boş bırakırsan oyuna başladığın ilk konumu otomatik kaydeder!")]
+    public Transform customSpawnPoint;
+
+    [Tooltip("İsteğe bağlı: Eğer öldürücü duvarlara özel bir Layer (örn. Hazard) verirsen buradan seçebilirsin (veya öldürecek objelere doğrudan HazardZone scripti ekleyebilirsin).")]
+    public LayerMask hazardLayer;
+
     private Rigidbody2D rb;
     private Collider2D playerCollider;
     private CircleCollider2D circleCollider;
@@ -116,14 +132,15 @@ public class GravityPlayerController : MonoBehaviour
     private bool isAligningToSurface = false;
     private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
 
+    private Vector3 initialSpawnPosition;
+    private Quaternion initialSpawnRotation;
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         rb.freezeRotation = true;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-        // Eğer kullanıcıda hala CapsuleCollider2D takılıysa veya CircleCollider2D varsa ikisini de destekle,
-        // ancak duvarlara tırmanmayı ve sekmeyi %100 sıfırlamak için otomatik Sürtünmesiz & Sekmesiz Fizik Materyali ata:
         zeroFrictionBounceMat = new PhysicsMaterial2D("ZeroFrictionNoBounce")
         {
             friction = 0f,
@@ -133,17 +150,15 @@ public class GravityPlayerController : MonoBehaviour
 
         SetupSmoothDynamicCircleCollider();
         mainCam = Camera.main;
+
+        initialSpawnPosition = transform.position;
+        initialSpawnRotation = transform.rotation;
     }
 
-    /// <summary>
-    /// Oval karakterin duvarlara takılıp tırmanmasını ve yerde zıplamasını engellemek için
-    /// CircleCollider2D kullanırız ve yarıçapını her karede ovalin yere bakan açısına göre dinamik ayarlarız.
-    /// </summary>
     private void SetupSmoothDynamicCircleCollider()
     {
         circleCollider = GetComponent<CircleCollider2D>();
 
-        // Eğer objede hala CapsuleCollider2D varsa ve CircleCollider2D yoksa otomatik dönüştür:
         CapsuleCollider2D cap = GetComponent<CapsuleCollider2D>();
         if (cap != null)
         {
@@ -171,6 +186,11 @@ public class GravityPlayerController : MonoBehaviour
 
     private void Start()
     {
+        if (customSpawnPoint != null)
+        {
+            initialSpawnPosition = customSpawnPoint.position;
+        }
+
         if (GravityManager.Instance != null)
         {
             GravityManager.Instance.OnGravityChanged -= HandleGravityChanged;
@@ -192,13 +212,11 @@ public class GravityPlayerController : MonoBehaviour
         CheckGrounded();
         ReadPlayerInputs(out bool jumpPressed, out bool firePressed, out bool alignSurfacePressed, out Vector2 mouseScreenPos);
 
-        // R tuşu veya Sağ Tık: Karakterin bulunduğu yüzeyin normaline göre yerçekimini dik (normal) hale getir
         if (alignSurfacePressed)
         {
             AlignGravityToCurrentSurface();
         }
 
-        // Zıplama: Yerdeysek VEYA Coyote Time içindeysek zıpla
         bool canJump = isGrounded || (Time.time - lastGroundedTime <= jumpCoyoteTime && Time.time - lastJumpTime > 0.22f);
         if (jumpPressed && canJump)
         {
@@ -213,16 +231,6 @@ public class GravityPlayerController : MonoBehaviour
         UpdateVisualTumbleAndDynamicCollider();
     }
 
-    /// <summary>
-    /// BU FONKSİYON ARADIĞIN BÜTÜN SORUNLARI ÇÖZER:
-    /// 1) Karakterin görsel açısını döndürür.
-    /// 2) Oval şeklin o anki açısında yerçekimi yönüne (zemine) olan tam yüksekliğini trigonometrik olarak hesaplar.
-    /// 3) CircleCollider2D'nin yarıçapını (`radius`) tam o yüksekliğe eşitler!
-    /// Sonuç:
-    /// - Kapsül dik dururken yarıçap 1.0 olur (Yere asla gömülmez!).
-    /// - Kapsül yan yatarken yarıçap 0.5 olur (Havada asla asılı kalmaz!).
-    /// - Çarpıştırıcı her an pürüzsüz bir daire olduğu ve sürtünmesi 0 olduğu için ne yerde seker ne de duvara tırmanır!
-    /// </summary>
     private void UpdateVisualTumbleAndDynamicCollider()
     {
         Vector2 downDir = GravityManager.Instance != null
@@ -245,22 +253,14 @@ public class GravityPlayerController : MonoBehaviour
             transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * rotationSmoothSpeed);
         }
 
-        // Ovalin (Kapsülün) o anki dönüş açısında zemine (downDir) olan tam teğet yüksekliğini hesapla:
-        // Bir elipsin/kapsülün verilen bir (downDir) yönündeki destek fonksiyonu (Support Distance):
         if (circleCollider != null)
         {
-            // Kapsülün uzun ekseni kendi local Y eksenidir (transform.up), kısa ekseni local X eksenidir (transform.right)
             float cosTheta = Mathf.Abs(Vector2.Dot(transform.up, downDir));
-            float sinTheta = Mathf.Abs(Vector2.Dot(transform.right, downDir));
-
-            // Kapsül geometrisi: Yarıçapı 'r = ovalHalfWidth' olan iki yarım küre ve aralarındaki 'h = ovalHalfHeight - ovalHalfWidth' çubuk!
-            // Kapsülün herhangi bir açıdaki zemine olan KESİN mesafesi = r + h * |cos(theta)| formülüyle milimetrik bulunur!
             float capsuleRadius = ovalHalfWidth;
             float cylinderHalfLength = Mathf.Max(0f, ovalHalfHeight - ovalHalfWidth);
 
             float exactGroundDistance = capsuleRadius + (cylinderHalfLength * cosTheta);
 
-            // CircleCollider2D yarıçapını bu kesin mesafeye eşitle:
             circleCollider.radius = exactGroundDistance;
             circleCollider.offset = Vector2.zero;
         }
@@ -370,8 +370,30 @@ public class GravityPlayerController : MonoBehaviour
         }
     }
 
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        if (IsHazardObject(collision.gameObject))
+        {
+            DieAndRespawn();
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        if (IsHazardObject(other.gameObject))
+        {
+            DieAndRespawn();
+        }
+    }
+
     private void OnCollisionStay2D(Collision2D collision)
     {
+        if (IsHazardObject(collision.gameObject))
+        {
+            DieAndRespawn();
+            return;
+        }
+
         if (((1 << collision.gameObject.layer) & groundLayer) != 0 && collision.contactCount > 0)
         {
             Vector2 currentDown = GravityManager.Instance != null
@@ -392,8 +414,6 @@ public class GravityPlayerController : MonoBehaviour
                 }
             }
 
-            // Sadece karakterin alt yarı küresine (yerçekimi yönüne) yakın temasları "Zemin" kabul et
-            // Böylece yan duvara sürtünürken duvarı zemin sanıp duvara tırmanmaz!
             if (bestDot > 0.35f)
             {
                 lastContactSurfaceNormal = bestNormal.normalized;
@@ -408,6 +428,70 @@ public class GravityPlayerController : MonoBehaviour
         if (((1 << collision.gameObject.layer) & groundLayer) != 0)
         {
             hasActiveSurfaceContact = false;
+        }
+    }
+
+    /// <summary>
+    /// Sadece senin elle belirlediğin tehlike objelerini (HazardZone scripti ekli olanlar,
+    /// seçtiğin Hazard Layer katmanındakiler veya Tag'i "Respawn" olanlar) öldürücü kabul eder.
+    /// </summary>
+    private bool IsHazardObject(GameObject obj)
+    {
+        if (obj == null) return false;
+
+        // 1. Obje üzerinde HazardZone scripti varsa
+        if (obj.GetComponent<HazardZone>() != null)
+        {
+            return true;
+        }
+
+        // 2. Obje senin seçtiğin Hazard Layer katmanındaysa
+        if (((1 << obj.layer) & hazardLayer) != 0)
+        {
+            return true;
+        }
+
+        // 3. Objenin Tag'i "Respawn" olarak seçildiyse
+        if (obj.CompareTag("Respawn"))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public void DieAndRespawn()
+    {
+        GravityProjectile[] activeProjectiles = FindObjectsByType<GravityProjectile>(FindObjectsSortMode.None);
+        for (int i = 0; i < activeProjectiles.Length; i++)
+        {
+            if (activeProjectiles[i] != null)
+            {
+                Destroy(activeProjectiles[i].gameObject);
+            }
+        }
+
+        Vector3 spawnPos = customSpawnPoint != null ? customSpawnPoint.position : initialSpawnPosition;
+        rb.linearVelocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+        transform.position = spawnPos;
+        transform.rotation = initialSpawnRotation;
+
+        isGrounded = false;
+        hasActiveSurfaceContact = false;
+        currentAirThrowsUsed = 0;
+
+        if (GravityManager.Instance != null)
+        {
+            isAligningToSurface = true;
+            GravityManager.Instance.SetGravityDirection(Vector2.down);
+            isAligningToSurface = false;
+        }
+
+        if (mainCam == null) mainCam = Camera.main;
+        if (mainCam != null && mainCam.TryGetComponent<CameraFollow2D>(out CameraFollow2D camFollow))
+        {
+            camFollow.SnapToTargetImmediate();
         }
     }
 
@@ -453,7 +537,7 @@ public class GravityPlayerController : MonoBehaviour
     private void ApplyMovementAndTerminalVelocity()
     {
         Vector2 downDir = GravityManager.Instance != null
-            ? GravityManager.Instance.CurrentGravityDirection
+            ? GravityManager.Instance.CurrentGravityDirection.normalized
             : Vector2.down;
 
         Vector2 upDir = -downDir;
@@ -469,9 +553,7 @@ public class GravityPlayerController : MonoBehaviour
             tangentInput = 0f;
         }
 
-        // DUVARA YAPIŞMA / TIRMANMA ENGELLEYİCİ:
-        // Eğer oyuncu bir duvara doğru yürümeye çalışıyorsa (yüzeye paralel yönde önünde duvar varsa)
-        // o yöndeki itişi kes ki karakter duvara tırmanmasın veya duvara yapışıp asılı kalmasın!
+        // DUVARA YAPIŞMA ENGELLEYİCİ
         if (Mathf.Abs(tangentInput) > 0.01f && playerCollider != null)
         {
             Vector2 moveDir = surfaceTangent * Mathf.Sign(tangentInput);
@@ -482,7 +564,6 @@ public class GravityPlayerController : MonoBehaviour
             int wallHits = playerCollider.Cast(moveDir, wallFilter, castHits, 0.08f);
             for (int i = 0; i < wallHits; i++)
             {
-                // Çarptığımız yüzey yürüme yönümüze karşı duran dik bir duvarsa:
                 if (Vector2.Dot(castHits[i].normal, -moveDir) > 0.7f)
                 {
                     tangentInput = 0f;
@@ -495,13 +576,22 @@ public class GravityPlayerController : MonoBehaviour
         float currentTangentSpeed = Vector2.Dot(currentVel, surfaceTangent);
         float verticalSpeed = Vector2.Dot(currentVel, upDir);
 
-        // Yerde takla atarken kapsülün yarıçap değişiminden kaynaklı yukarı yönlü zıplama/sekme hızlarını bastır
+        // Yerde takla atarken zıplama dışı sekme hızlarını bastır
         if (isGrounded && Time.time - lastJumpTime > 0.15f && verticalSpeed > 0f)
         {
             verticalSpeed = 0f;
         }
 
-        float targetTangentSpeed = tangentInput * maxMoveSpeed;
+        // HIZLI SERBEST DÜŞÜŞ (FAST FALL):
+        if (!isGrounded && fallGravityMultiplier > 1f)
+        {
+            float baseGravity = GravityManager.Instance != null ? GravityManager.Instance.gravityStrength : 25f;
+            float extraFallAccel = baseGravity * (fallGravityMultiplier - 1f);
+            verticalSpeed -= extraFallAccel * Time.fixedDeltaTime;
+        }
+
+        float currentMaxMoveSpeed = isGrounded ? maxMoveSpeed : maxAirMoveSpeed;
+        float targetTangentSpeed = tangentInput * currentMaxMoveSpeed;
 
         float accelRate;
         if (Mathf.Abs(targetTangentSpeed) > 0.01f)
@@ -580,23 +670,38 @@ public class GravityPlayerController : MonoBehaviour
 
         if (isAligningToSurface) return;
 
+        Vector2 downDir = newGravityDir.normalized;
         Vector2 currentVel = rb.linearVelocity;
         float currentSpeed = currentVel.magnitude;
+
+        Vector2 resultingVel = Vector2.zero;
 
         switch (momentumMode)
         {
             case GravityShiftMomentumMode.ResetToZero:
-                rb.linearVelocity = Vector2.zero;
+                resultingVel = Vector2.zero;
                 break;
 
             case GravityShiftMomentumMode.KeepWorldMomentum:
-                rb.linearVelocity = currentVel * momentumRetentionMultiplier;
+                resultingVel = currentVel * momentumRetentionMultiplier;
                 break;
 
             case GravityShiftMomentumMode.RedirectSpeedToNewDown:
-                rb.linearVelocity = newGravityDir.normalized * (currentSpeed * momentumRetentionMultiplier);
+                resultingVel = downDir * (currentSpeed * momentumRetentionMultiplier);
                 break;
         }
+
+        if (gravityShiftInitialFallBoost > 0f)
+        {
+            float speedInNewDown = Vector2.Dot(resultingVel, downDir);
+            if (speedInNewDown < gravityShiftInitialFallBoost)
+            {
+                Vector2 tangentComponent = resultingVel - (downDir * speedInNewDown);
+                resultingVel = tangentComponent + (downDir * gravityShiftInitialFallBoost);
+            }
+        }
+
+        rb.linearVelocity = resultingVel;
     }
 
     private void UpdateTargetRotation(Vector2 gravityDir)
