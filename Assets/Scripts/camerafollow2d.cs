@@ -2,7 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// Ana kameranın (Main Camera) oyuncuyu bölüm boyunca yumuşakça takip etmesini sağlar.
-/// Main Camera objesine eklenir.
+/// Time.unscaledDeltaTime kullandığı için Shift ile zaman yavaşlatıldığında (Focus Modu) bile
+/// kamera oyuncuyu takılmadan, tereyağı gibi akıcı takip eder!
 /// </summary>
 public class CameraFollow2D : MonoBehaviour
 {
@@ -30,13 +31,13 @@ public class CameraFollow2D : MonoBehaviour
 
     private Vector3 currentVelocity = Vector3.zero;
     private Rigidbody2D targetRb;
+    private GravityPlayerController targetPlayer;
     private Vector3 currentLookAhead = Vector3.zero;
 
     private void Start()
     {
         FindTargetIfNeeded();
 
-        // Oyun başladığında kamerayı doğrudan karakterin olduğu yere ışınla
         if (target != null)
         {
             Vector3 startPos = target.position + offset;
@@ -54,11 +55,13 @@ public class CameraFollow2D : MonoBehaviour
             {
                 target = player.transform;
                 targetRb = player.GetComponent<Rigidbody2D>();
+                targetPlayer = player;
             }
         }
-        else if (targetRb == null)
+        else
         {
-            targetRb = target.GetComponent<Rigidbody2D>();
+            if (targetRb == null) targetRb = target.GetComponent<Rigidbody2D>();
+            if (targetPlayer == null) targetPlayer = target.GetComponent<GravityPlayerController>();
         }
     }
 
@@ -70,25 +73,40 @@ public class CameraFollow2D : MonoBehaviour
             if (target == null) return;
         }
 
+        float dt = Time.unscaledDeltaTime;
+        if (dt <= 0.0001f) dt = Time.deltaTime;
+
         Vector3 desiredPos = target.position + offset;
 
-        if (useVelocityLookAhead && targetRb != null)
+        // Shift (Focus) modundayken kamera tam karaktere odaklansın (zoom yaparken savrulmasın)
+        bool isFocusing = targetPlayer != null && targetPlayer.IsFocusActive;
+
+        if (useVelocityLookAhead && targetRb != null && !isFocusing)
         {
             Vector2 vel = targetRb.linearVelocity;
             Vector3 targetLookAhead = Vector3.ClampMagnitude(new Vector3(vel.x, vel.y, 0f) * lookAheadFactor, maxLookAheadDistance);
-            currentLookAhead = Vector3.Lerp(currentLookAhead, targetLookAhead, Time.deltaTime * 6f);
+            currentLookAhead = Vector3.Lerp(currentLookAhead, targetLookAhead, dt * 6f);
+            desiredPos += currentLookAhead;
+        }
+        else
+        {
+            currentLookAhead = Vector3.Lerp(currentLookAhead, Vector3.zero, dt * 8f);
             desiredPos += currentLookAhead;
         }
 
-        // Kameranın Z ekseni her zaman sabit (-10) kalmalı ki 2D sahneyi görebilsin
         desiredPos.z = offset.z;
 
-        transform.position = Vector3.SmoothDamp(transform.position, desiredPos, ref currentVelocity, smoothTime);
+        // Shift ile zaman yavaşlatıldığında bile kameranın akıcı takip etmesi için unscaledDeltaTime kullan
+        float effectiveSmoothTime = isFocusing ? smoothTime * 0.55f : smoothTime;
+        transform.position = Vector3.SmoothDamp(
+            transform.position,
+            desiredPos,
+            ref currentVelocity,
+            effectiveSmoothTime,
+            Mathf.Infinity,
+            dt);
     }
 
-    /// <summary>
-    /// Karakter öldüğünde ve başlangıç noktasına ışınlandığında kamerayı da anında oraya odaklar.
-    /// </summary>
     public void SnapToTargetImmediate()
     {
         if (target == null) return;

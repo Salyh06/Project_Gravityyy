@@ -7,8 +7,11 @@ using UnityEngine.InputSystem;
 /// 360 derece değişen yerçekimine uyum sağlayan, Oval (Capsule) karakterin dönerken:
 /// 1) Asla zeminin içine girmemesini ve havada asılı kalmamasını,
 /// 2) Yerde zıplama/sekme yapmadan yağ gibi kayarak takla atmasını,
-/// 3) Havada bir noktaya doğru serbest düşerken çok daha hızlı ivmelenip yüksek düşüş hızlarına (Fast Fall & Gravity Shift Boost) ulaşmasını,
-/// 4) Sadece senin elle belirlediğin tehlike objelerine (HazardZone scripti ekli veya Hazard Layer/Tag'li objelere) değdiğinde ölüp başa dönmesini sağlayan 2D Karakter Kontrolcüsü.
+/// 3) Havada bir noktaya doğru serbest düşerken yüksek düşüş hızlarına ulaşmasını,
+/// 4) Küçültülebilir Özel Ölüm Hitbox'ı (hazardHitboxScaleMultiplier) ile dikenlere/tuzaklara sadece
+///    gerçekten iç kısma değdiğinde ölüp başa dönmesini (Adil Hitbox / Gracie Hitbox),
+/// 5) GTA 5 Franklin "Focus / Manevra Modu" (Shift ile ekranı zoomlayıp zamanı yavaşlatan, havada manevra
+///    kabiliyetini katlayan ve yere değince dolan Enerji Barı sistemi) içeren 2D Karakter Kontrolcüsü.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class GravityPlayerController : MonoBehaviour
@@ -49,7 +52,7 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Havada serbest düşerken ulaşılabilecek MAKSİMUM düşüş hızı (Terminal Velocity).")]
     public float maxFallSpeed = 48f;
 
-    [Tooltip("Karakter havada düşerken yerçekimini kaç kat daha güçlü hissetsin? (1 = normal, 2.5 = 2.5 kat daha hızlı ivmelenerek düşer!).")]
+    [Tooltip("Karakter havada düşerken yerçekimini kaç kat daha güçlü hissetsin? (1 = normal, 2.6 = 2.6 kat daha hızlı ivmelenerek düşer!).")]
     public float fallGravityMultiplier = 2.6f;
 
     [Tooltip("Küre bir duvara çarpıp yerçekimi yönü değiştiği anda karaktere yeni düşüş yönünde verilecek ANINDA başlangıç fırlama hızı.")]
@@ -108,12 +111,53 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Roll Visually Like Ball kapalıysa, karakterin yeni yerçekimi yönüne dönme hızı.")]
     public float rotationSmoothSpeed = 18f;
 
-    [Header("7. Ölüm (Hazard) ve Yeniden Doğma (Respawn)")]
+    [Header("7. Ölüm Hitbox Küçültme (Hazard) ve Yeniden Doğma (Respawn)")]
+    [Tooltip("ÖLÜM HITBOX KÜÇÜLTME ORANI: 1.0 = Fiziksel boyutla aynı, 0.45 = Karakterin ölüm hitbox'ı %55 daha küçüktür! Dikenlerin yanından sıyırıp geçerken ölmezsin, sadece diken karakterin iç/merkez kısmına girerse ölürsün!")]
+    [Range(0.1f, 1f)]
+    public float hazardHitboxScaleMultiplier = 0.45f;
+
     [Tooltip("İsteğe bağlı: Özel bir doğma noktası belirlemek istersen buraya sürükle. Boş bırakırsan oyuna başladığın ilk konumu otomatik kaydeder!")]
     public Transform customSpawnPoint;
 
-    [Tooltip("İsteğe bağlı: Eğer öldürücü duvarlara özel bir Layer (örn. Hazard) verirsen buradan seçebilirsin (veya öldürecek objelere doğrudan HazardZone scripti ekleyebilirsin).")]
+    [Tooltip("İsteğe bağlı: Eğer öldürücü duvarlara özel bir Layer (örn. Hazard) verirsen buradan seçebilirsin (veya öldürecek objelere Tag = Respawn ya da HazardZone scripti ekleyebilirsin).")]
     public LayerMask hazardLayer;
+
+    [Header("8. Franklin Odak / Hava Manevra Modu (Shift + Zoom + Bar)")]
+    [Tooltip("Shift tuşuyla çalışan Franklin tarzı Hava Manevra & Odak özelliği aktif olsun mu?")]
+    public bool enableFocusAbility = true;
+
+    [Tooltip("Barın maksimum kapasitesi (Örn: 100 birim). Yere değdiğin an otomatik olarak tamamen dolar!")]
+    public float maxFocusEnergy = 100f;
+
+    [Tooltip("Shift'e basılı tutarken bar saniyede kaç birim tükensin? (Gerçek zamana göre: Örn 50 yaparsan 100'lük bar tam 2 saniyede biter, 25 yaparsan 4 saniyede biter!).")]
+    public float focusDrainRatePerSecond = 45f;
+
+    [Tooltip("Shift'e basıldığında oyun zamanı ne kadar yavaşlasın? (Örn: 0.35 = %65 yavaşlatma).")]
+    [Range(0.05f, 1f)]
+    public float focusTimeScale = 0.35f;
+
+    [Tooltip("Shift'e basıldığında kamera ne kadar yakınlaşsın (Zoom)? (0.78 = %22 yakınlaşır, 1 = Zoom yapmaz).")]
+    [Range(0.4f, 1f)]
+    public float focusCameraZoomMultiplier = 0.78f;
+
+    [Tooltip("Kamera Zoom geçiş yumuşaklığı hızı.")]
+    public float focusZoomLerpSpeed = 8f;
+
+    [Tooltip("FRANKLIN ETKİSİ: Shift basılıyken havadaki sağa/sola manevra ivmesi (Air Acceleration) kaç kat artsın? (Örn: 3.5 kat daha keskin dönüş!).")]
+    public float focusAirAccelerationMultiplier = 3.5f;
+
+    [Tooltip("FRANKLIN ETKİSİ: Shift basılıyken havadaki maksimum yanal manevra hızı (Max Air Move Speed) kaç kat artsın?")]
+    public float focusAirSpeedMultiplier = 1.45f;
+
+    [Tooltip("Shift basılıyken düşüş hızı biraz frenlensin mi? (0.65 = Düşüş hızını %35 dizginler ki dar aralıktan manevra yaparak geçebil, 1 = Düşüş hızına dokunmaz).")]
+    [Range(0.2f, 1f)]
+    public float focusFallSpeedDamping = 0.7f;
+
+    [Tooltip("Ekranda Odak/Manevra Barı gösterilsin mi? (Hiç Canvas kurmana gerek kalmadan otomatik çizer).")]
+    public bool showFocusBarUI = true;
+
+    public bool IsFocusActive => isFocusActive;
+    public float CurrentFocusEnergyNormalized => maxFocusEnergy > 0f ? Mathf.Clamp01(currentFocusEnergy / maxFocusEnergy) : 0f;
 
     private Rigidbody2D rb;
     private Collider2D playerCollider;
@@ -130,8 +174,15 @@ public class GravityPlayerController : MonoBehaviour
     private Vector2 lastContactSurfaceNormal = Vector2.up;
     private bool hasActiveSurfaceContact = false;
     private bool isAligningToSurface = false;
-    private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
 
+    private float currentFocusEnergy;
+    private bool isFocusActive = false;
+    private float defaultFixedDeltaTime = 0.02f;
+    private float baseCameraOrthoSize = -1f;
+    private Texture2D uiWhiteTex;
+
+    private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
+    private readonly Collider2D[] hazardOverlapHits = new Collider2D[8];
     private Vector3 initialSpawnPosition;
     private Quaternion initialSpawnRotation;
 
@@ -141,6 +192,9 @@ public class GravityPlayerController : MonoBehaviour
         rb.freezeRotation = true;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
+        defaultFixedDeltaTime = Time.fixedDeltaTime > 0.001f ? Time.fixedDeltaTime : 0.02f;
+        currentFocusEnergy = maxFocusEnergy;
+
         zeroFrictionBounceMat = new PhysicsMaterial2D("ZeroFrictionNoBounce")
         {
             friction = 0f,
@@ -149,7 +203,17 @@ public class GravityPlayerController : MonoBehaviour
         rb.sharedMaterial = zeroFrictionBounceMat;
 
         SetupSmoothDynamicCircleCollider();
+
+        if (TryGetComponent<LineRenderer>(out LineRenderer oldLine))
+        {
+            oldLine.enabled = false;
+        }
+
         mainCam = Camera.main;
+        if (mainCam != null && mainCam.orthographic)
+        {
+            baseCameraOrthoSize = mainCam.orthographicSize;
+        }
 
         initialSpawnPosition = transform.position;
         initialSpawnRotation = transform.rotation;
@@ -191,6 +255,12 @@ public class GravityPlayerController : MonoBehaviour
             initialSpawnPosition = customSpawnPoint.position;
         }
 
+        if (mainCam == null) mainCam = Camera.main;
+        if (mainCam != null && mainCam.orthographic && baseCameraOrthoSize <= 0f)
+        {
+            baseCameraOrthoSize = mainCam.orthographicSize;
+        }
+
         if (GravityManager.Instance != null)
         {
             GravityManager.Instance.OnGravityChanged -= HandleGravityChanged;
@@ -201,6 +271,13 @@ public class GravityPlayerController : MonoBehaviour
 
     private void OnDisable()
     {
+        SetFocusAbilityState(false);
+
+        if (mainCam != null && mainCam.orthographic && baseCameraOrthoSize > 0f)
+        {
+            mainCam.orthographicSize = baseCameraOrthoSize;
+        }
+
         if (GravityManager.Instance != null)
         {
             GravityManager.Instance.OnGravityChanged -= HandleGravityChanged;
@@ -210,7 +287,14 @@ public class GravityPlayerController : MonoBehaviour
     private void Update()
     {
         CheckGrounded();
-        ReadPlayerInputs(out bool jumpPressed, out bool firePressed, out bool alignSurfacePressed, out Vector2 mouseScreenPos);
+        CheckShrunkHazardHitbox();
+
+        ReadPlayerInputs(
+            out bool jumpPressed,
+            out bool firePressed,
+            out bool shiftHeld,
+            out bool alignSurfacePressed,
+            out Vector2 mouseScreenPos);
 
         if (alignSurfacePressed)
         {
@@ -228,7 +312,134 @@ public class GravityPlayerController : MonoBehaviour
             TryThrowProjectile(mouseScreenPos);
         }
 
+        HandleFocusAbilityAndCameraZoom(shiftHeld);
+
         UpdateVisualTumbleAndDynamicCollider();
+    }
+
+    /// <summary>
+    /// ÖZEL KÜÇÜLTÜLMÜŞ ÖLÜM HITBOX KONTROLÜ:
+    /// Karakterin duvarlarda yürümesini sağlayan ana CircleCollider2D'yi küçültmeden,
+    /// sadece dikenler/tuzaklar için karakterin merkezinde daha küçük bir iç çember (Lethal Core) kontrol eder!
+    /// Ayrıca sahnedeki dikenlerin Collider'ı Trigger değilse bile karaktere çarptığında sektirmemesi için
+    /// dikenlerle dış çemberin fiziksel çarpışmasını (IgnoreCollision) otomatik devre dışı bırakır,
+    /// sadece diken bu içteki küçük kırmızı çembere değdiğinde öldürür!
+    /// </summary>
+    private float GetLethalHitboxRadiusWorld()
+    {
+        float baseRadius = ovalHalfWidth * Mathf.Clamp(hazardHitboxScaleMultiplier, 0.1f, 1f);
+        float maxScale = Mathf.Max(Mathf.Abs(transform.lossyScale.x), Mathf.Abs(transform.lossyScale.y));
+        return baseRadius * maxScale;
+    }
+
+    private void CheckShrunkHazardHitbox()
+    {
+        float lethalRadius = GetLethalHitboxRadiusWorld();
+
+        ContactFilter2D filter = ContactFilter2D.noFilter;
+        filter.useTriggers = true;
+
+        int hitCount = Physics2D.OverlapCircle(transform.position, lethalRadius, filter, hazardOverlapHits);
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D col = hazardOverlapHits[i];
+            if (col != null && col.gameObject != gameObject && IsHazardObject(col.gameObject))
+            {
+                DieAndRespawn();
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Dıştan kontrol (örn. HazardZone.cs scripti üzerinden) geldiğinde de diken gerçekten
+    /// küçültülmüş iç ölüm hitbox'ına (Lethal Core) girdi mi diye kontrol eder!
+    /// </summary>
+    public bool IsColliderTouchingLethalCore(Collider2D hazardCollider)
+    {
+        if (hazardCollider == null) return false;
+        float lethalRadius = GetLethalHitboxRadiusWorld();
+        Vector2 closestPoint = hazardCollider.ClosestPoint(transform.position);
+        float distSq = ((Vector2)transform.position - closestPoint).sqrMagnitude;
+        return distSq <= (lethalRadius * lethalRadius);
+    }
+
+    private void HandleFocusAbilityAndCameraZoom(bool shiftHeld)
+    {
+        if (isGrounded)
+        {
+            currentFocusEnergy = maxFocusEnergy;
+        }
+
+        bool wantsAndCanFocus = enableFocusAbility && shiftHeld && !isGrounded && currentFocusEnergy > 0.01f;
+
+        if (wantsAndCanFocus)
+        {
+            SetFocusAbilityState(true);
+
+            currentFocusEnergy -= focusDrainRatePerSecond * Time.unscaledDeltaTime;
+            if (currentFocusEnergy <= 0f)
+            {
+                currentFocusEnergy = 0f;
+                SetFocusAbilityState(false);
+            }
+        }
+        else
+        {
+            if (isFocusActive)
+            {
+                SetFocusAbilityState(false);
+            }
+        }
+
+        UpdateCameraZoomEffect();
+    }
+
+    public void SetBulletTimeState(bool active)
+    {
+        SetFocusAbilityState(active);
+    }
+
+    public void SetFocusAbilityState(bool active)
+    {
+        if (active)
+        {
+            isFocusActive = true;
+            float targetScale = Mathf.Clamp(focusTimeScale, 0.05f, 1f);
+            Time.timeScale = targetScale;
+            Time.fixedDeltaTime = defaultFixedDeltaTime * targetScale;
+        }
+        else
+        {
+            if (isFocusActive)
+            {
+                isFocusActive = false;
+                Time.timeScale = 1f;
+                Time.fixedDeltaTime = defaultFixedDeltaTime;
+            }
+        }
+    }
+
+    private void UpdateCameraZoomEffect()
+    {
+        if (mainCam == null) mainCam = Camera.main;
+        if (mainCam == null || !mainCam.orthographic) return;
+
+        if (!isFocusActive && Mathf.Abs(mainCam.orthographicSize - baseCameraOrthoSize) > 0.01f && baseCameraOrthoSize <= 0f)
+        {
+            baseCameraOrthoSize = mainCam.orthographicSize;
+        }
+
+        if (baseCameraOrthoSize <= 0f) return;
+
+        float targetOrthoSize = isFocusActive
+            ? baseCameraOrthoSize * focusCameraZoomMultiplier
+            : baseCameraOrthoSize;
+
+        mainCam.orthographicSize = Mathf.Lerp(
+            mainCam.orthographicSize,
+            targetOrthoSize,
+            Time.unscaledDeltaTime * focusZoomLerpSpeed);
     }
 
     private void UpdateVisualTumbleAndDynamicCollider()
@@ -271,11 +482,17 @@ public class GravityPlayerController : MonoBehaviour
         ApplyMovementAndTerminalVelocity();
     }
 
-    private void ReadPlayerInputs(out bool jumpPressed, out bool firePressed, out bool alignSurfacePressed, out Vector2 mouseScreenPos)
+    private void ReadPlayerInputs(
+        out bool jumpPressed,
+        out bool firePressed,
+        out bool shiftHeld,
+        out bool alignSurfacePressed,
+        out Vector2 mouseScreenPos)
     {
         moveInput = Vector2.zero;
         jumpPressed = false;
         firePressed = false;
+        shiftHeld = false;
         alignSurfacePressed = false;
         mouseScreenPos = Vector2.zero;
 
@@ -294,6 +511,7 @@ public class GravityPlayerController : MonoBehaviour
             }
 
             jumpPressed = Keyboard.current.spaceKey.wasPressedThisFrame;
+            shiftHeld = Keyboard.current.leftShiftKey.isPressed || Keyboard.current.rightShiftKey.isPressed;
 
             if (Keyboard.current.rKey.wasPressedThisFrame)
             {
@@ -323,6 +541,7 @@ public class GravityPlayerController : MonoBehaviour
 
         jumpPressed = Input.GetButtonDown("Jump");
         firePressed = Input.GetMouseButtonDown(0);
+        shiftHeld = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         alignSurfacePressed = Input.GetKeyDown(KeyCode.R) || Input.GetMouseButtonDown(1);
         mouseScreenPos = Input.mousePosition;
 #endif
@@ -351,8 +570,16 @@ public class GravityPlayerController : MonoBehaviour
             int hitCount = playerCollider.Cast(downDir, filter, castHits, groundCheckExtraDistance);
             if (hitCount > 0)
             {
-                hitGround = true;
-                lastContactSurfaceNormal = castHits[0].normal.normalized;
+                // Eğer altımızdaki obje bir tuzak/spike değilse zemin kabul et
+                for (int i = 0; i < hitCount; i++)
+                {
+                    if (!IsHazardObject(castHits[i].collider.gameObject))
+                    {
+                        hitGround = true;
+                        lastContactSurfaceNormal = castHits[i].normal.normalized;
+                        break;
+                    }
+                }
             }
         }
 
@@ -367,6 +594,7 @@ public class GravityPlayerController : MonoBehaviour
         {
             lastGroundedTime = Time.time;
             currentAirThrowsUsed = 0;
+            currentFocusEnergy = maxFocusEnergy;
         }
     }
 
@@ -374,13 +602,31 @@ public class GravityPlayerController : MonoBehaviour
     {
         if (IsHazardObject(collision.gameObject))
         {
-            DieAndRespawn();
+            // Eğer dikenin ucu dış fiziksel collider'a değdi ama henüz küçültülmüş iç ölüm hitbox'ına (Lethal Core)
+            // girmediyse, dikenin karakteri fiziksel olarak durdurmaması için çarpışmayı Trigger'a çevir
+            // ve sadece iç çekirdeğe değdiğinde öldür!
+            if (IsColliderTouchingLethalCore(collision.collider))
+            {
+                DieAndRespawn();
+            }
+            else
+            {
+                collision.collider.isTrigger = true;
+            }
         }
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (IsHazardObject(other.gameObject))
+        if (IsHazardObject(other.gameObject) && IsColliderTouchingLethalCore(other))
+        {
+            DieAndRespawn();
+        }
+    }
+
+    private void OnTriggerStay2D(Collider2D other)
+    {
+        if (IsHazardObject(other.gameObject) && IsColliderTouchingLethalCore(other))
         {
             DieAndRespawn();
         }
@@ -390,7 +636,14 @@ public class GravityPlayerController : MonoBehaviour
     {
         if (IsHazardObject(collision.gameObject))
         {
-            DieAndRespawn();
+            if (IsColliderTouchingLethalCore(collision.collider))
+            {
+                DieAndRespawn();
+            }
+            else
+            {
+                collision.collider.isTrigger = true;
+            }
             return;
         }
 
@@ -431,27 +684,20 @@ public class GravityPlayerController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Sadece senin elle belirlediğin tehlike objelerini (HazardZone scripti ekli olanlar,
-    /// seçtiğin Hazard Layer katmanındakiler veya Tag'i "Respawn" olanlar) öldürücü kabul eder.
-    /// </summary>
     private bool IsHazardObject(GameObject obj)
     {
         if (obj == null) return false;
 
-        // 1. Obje üzerinde HazardZone scripti varsa
         if (obj.GetComponent<HazardZone>() != null)
         {
             return true;
         }
 
-        // 2. Obje senin seçtiğin Hazard Layer katmanındaysa
         if (((1 << obj.layer) & hazardLayer) != 0)
         {
             return true;
         }
 
-        // 3. Objenin Tag'i "Respawn" olarak seçildiyse
         if (obj.CompareTag("Respawn"))
         {
             return true;
@@ -462,6 +708,14 @@ public class GravityPlayerController : MonoBehaviour
 
     public void DieAndRespawn()
     {
+        SetFocusAbilityState(false);
+        currentFocusEnergy = maxFocusEnergy;
+
+        if (mainCam != null && mainCam.orthographic && baseCameraOrthoSize > 0f)
+        {
+            mainCam.orthographicSize = baseCameraOrthoSize;
+        }
+
         GravityProjectile[] activeProjectiles = FindObjectsByType<GravityProjectile>(FindObjectsSortMode.None);
         for (int i = 0; i < activeProjectiles.Length; i++)
         {
@@ -529,6 +783,7 @@ public class GravityPlayerController : MonoBehaviour
 
             rb.linearVelocity = Vector2.zero;
             currentAirThrowsUsed = 0;
+            currentFocusEnergy = maxFocusEnergy;
 
             transform.rotation = targetRotation;
         }
@@ -553,7 +808,6 @@ public class GravityPlayerController : MonoBehaviour
             tangentInput = 0f;
         }
 
-        // DUVARA YAPIŞMA ENGELLEYİCİ
         if (Mathf.Abs(tangentInput) > 0.01f && playerCollider != null)
         {
             Vector2 moveDir = surfaceTangent * Mathf.Sign(tangentInput);
@@ -564,7 +818,8 @@ public class GravityPlayerController : MonoBehaviour
             int wallHits = playerCollider.Cast(moveDir, wallFilter, castHits, 0.08f);
             for (int i = 0; i < wallHits; i++)
             {
-                if (Vector2.Dot(castHits[i].normal, -moveDir) > 0.7f)
+                // Eğer önümüzdeki şey bir spike/tuzak değilse ve dik bir duvarsa yürüme itişini kes
+                if (!IsHazardObject(castHits[i].collider.gameObject) && Vector2.Dot(castHits[i].normal, -moveDir) > 0.7f)
                 {
                     tangentInput = 0f;
                     break;
@@ -576,13 +831,11 @@ public class GravityPlayerController : MonoBehaviour
         float currentTangentSpeed = Vector2.Dot(currentVel, surfaceTangent);
         float verticalSpeed = Vector2.Dot(currentVel, upDir);
 
-        // Yerde takla atarken zıplama dışı sekme hızlarını bastır
         if (isGrounded && Time.time - lastJumpTime > 0.15f && verticalSpeed > 0f)
         {
             verticalSpeed = 0f;
         }
 
-        // HIZLI SERBEST DÜŞÜŞ (FAST FALL):
         if (!isGrounded && fallGravityMultiplier > 1f)
         {
             float baseGravity = GravityManager.Instance != null ? GravityManager.Instance.gravityStrength : 25f;
@@ -591,23 +844,37 @@ public class GravityPlayerController : MonoBehaviour
         }
 
         float currentMaxMoveSpeed = isGrounded ? maxMoveSpeed : maxAirMoveSpeed;
+        float currentAirAccel = airAcceleration;
+        float currentAirDecel = airDeceleration;
+
+        if (isFocusActive && !isGrounded)
+        {
+            currentMaxMoveSpeed *= focusAirSpeedMultiplier;
+            currentAirAccel *= focusAirAccelerationMultiplier;
+            currentAirDecel *= focusAirAccelerationMultiplier;
+        }
+
         float targetTangentSpeed = tangentInput * currentMaxMoveSpeed;
 
         float accelRate;
         if (Mathf.Abs(targetTangentSpeed) > 0.01f)
         {
-            accelRate = isGrounded ? groundAcceleration : airAcceleration;
+            accelRate = isGrounded ? groundAcceleration : currentAirAccel;
         }
         else
         {
-            accelRate = isGrounded ? groundDeceleration : airDeceleration;
+            accelRate = isGrounded ? groundDeceleration : currentAirDecel;
         }
 
         float newTangentSpeed = Mathf.MoveTowards(currentTangentSpeed, targetTangentSpeed, accelRate * Time.fixedDeltaTime);
 
-        if (verticalSpeed < -maxFallSpeed)
+        float effectiveMaxFallSpeed = (isFocusActive && !isGrounded)
+            ? maxFallSpeed * focusFallSpeedDamping
+            : maxFallSpeed;
+
+        if (verticalSpeed < -effectiveMaxFallSpeed)
         {
-            verticalSpeed = -maxFallSpeed;
+            verticalSpeed = -effectiveMaxFallSpeed;
         }
 
         rb.linearVelocity = (surfaceTangent * newTangentSpeed) + (upDir * verticalSpeed);
@@ -709,5 +976,54 @@ public class GravityPlayerController : MonoBehaviour
         Vector2 upDir = -gravityDir.normalized;
         float angle = Mathf.Atan2(upDir.y, upDir.x) * Mathf.Rad2Deg - 90f;
         targetRotation = Quaternion.Euler(0f, 0f, angle);
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        // Scene ekranında Player'ı seçtiğinde içteki KÜÇÜK KIRMIZI ÖLÜM HITBOX'ını gözünle görebilmen için!
+        Gizmos.color = new Color(1f, 0.15f, 0.15f, 0.9f);
+        Gizmos.DrawWireSphere(transform.position, GetLethalHitboxRadiusWorld());
+    }
+
+    private void OnGUI()
+    {
+        if (!enableFocusAbility || !showFocusBarUI) return;
+
+        if (uiWhiteTex == null)
+        {
+            uiWhiteTex = new Texture2D(1, 1);
+            uiWhiteTex.SetPixel(0, 0, Color.white);
+            uiWhiteTex.Apply();
+        }
+
+        float fillRatio = CurrentFocusEnergyNormalized;
+
+        float barWidth = 260f;
+        float barHeight = 18f;
+        float x = (Screen.width - barWidth) * 0.5f;
+        float y = 28f;
+
+        GUI.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
+        GUI.DrawTexture(new Rect(x - 3f, y - 3f, barWidth + 6f, barHeight + 6f), uiWhiteTex);
+
+        GUI.color = new Color(0.2f, 0.22f, 0.28f, 0.9f);
+        GUI.DrawTexture(new Rect(x, y, barWidth, barHeight), uiWhiteTex);
+
+        Color activeColor = isFocusActive
+            ? new Color(1f, 0.85f, 0.15f, 1f)
+            : Color.Lerp(new Color(1f, 0.3f, 0.2f, 1f), new Color(0.15f, 0.95f, 0.65f, 1f), fillRatio);
+
+        GUI.color = activeColor;
+        GUI.DrawTexture(new Rect(x, y, barWidth * fillRatio, barHeight), uiWhiteTex);
+
+        GUI.color = Color.white;
+        GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 11,
+            fontStyle = FontStyle.Bold
+        };
+        string statusText = isFocusActive ? "ODAK MANEVRA AKTİF [SHIFT]" : "HAVA MANEVRA BARI [SHIFT]";
+        GUI.Label(new Rect(x, y - 1f, barWidth, barHeight + 2f), statusText, labelStyle);
     }
 }
