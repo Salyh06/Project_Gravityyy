@@ -120,7 +120,7 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 4
-        width: 32
+        width: 16
         height: 16
       alignment: 0
       pivot: {x: 0.5, y: 0.5}
@@ -132,6 +132,28 @@ TextureImporter:
       bones: []
       spriteID: b1f3d73318ef57d70800000000000000
       internalID: 9040411657884221211
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: kutuk_1
+      rect:
+        serializedVersion: 2
+        x: 16
+        y: 4
+        width: 16
+        height: 16
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 142bf1bfccc425b44ba83d616214cba3
+      internalID: 1274418243
       vertices: []
       indices: 
       edges: []
@@ -151,6 +173,7 @@ TextureImporter:
       entries: []
     nameFileIdTable:
       kutuk_0: 9040411657884221211
+      kutuk_1: 1274418243
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
