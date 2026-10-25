@@ -964,6 +964,8 @@ public class GravityPlayerController : MonoBehaviour
             return;
         }
 
+        if (Time.time - lastJumpTime < 0.08f) return;
+
         if (((1 << collision.gameObject.layer) & groundLayer) != 0 && collision.contactCount > 0)
         {
             Vector2 currentDown = GravityManager.Instance != null
@@ -1242,6 +1244,19 @@ public class GravityPlayerController : MonoBehaviour
         if (!tutorialJumpLeftGround) return;
         completedJumpCount++;
         tutorialJumpInProgress = false;
+    }
+
+    public void BounceFromSurface(Vector2 direction, float speed)
+    {
+        if (rb == null || direction.sqrMagnitude < 0.001f) return;
+        Vector2 normal = direction.normalized;
+        Vector2 tangent = new Vector2(normal.y, -normal.x);
+        float tangentSpeed = Vector2.Dot(rb.linearVelocity, tangent);
+        lastJumpTime = Time.time;
+        lastGroundedTime = -10f;
+        isGrounded = false;
+        hasActiveSurfaceContact = false;
+        rb.linearVelocity = tangent * tangentSpeed + normal * Mathf.Max(FixedJumpForce, speed);
     }
 
     private void Jump()

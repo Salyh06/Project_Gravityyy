@@ -9197,11 +9197,16 @@ MonoBehaviour:
   firstLevelBuildIndex: 1
   showBuiltInPixelMenu: 1
   customPixelFont: {fileID: 12800000, guid: 748469c9ecb584fc9963e8b822644c96, type: 3}
-  gameTitle: "Bok B\xF6ce\u011Finin Boku"
+  gameTitle: Gall
   gameSubtitle: "D\xFC\u015Fmeye Devam Baba"
   animateCameraGently: 1
   cameraSwayAmount: 1.2
   cameraSwaySpeed: 0.6
+  buttonHoverSmoothSpeed: 12
+  cornerCutSize: 6
+  letterUpwardGravity: 160
+  letterReturnSpring: 115
+  letterReturnDamping: 15
 --- !u!1 &537720224
 GameObject:
   m_ObjectHideFlags: 0

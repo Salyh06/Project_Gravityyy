@@ -17,12 +17,64 @@ public class SparseCheckpoint : MonoBehaviour
     private float activatedAt;
     private Camera view;
     private GUIStyle labelStyle;
+    private SpriteRenderer stoneRenderer;
+    private Sprite idleStone;
+    private Sprite savedStone;
+    private Material stoneMaterial;
 
     private void Awake()
     {
         var trigger = GetComponent<BoxCollider2D>();
         trigger.isTrigger = true;
         view = Camera.main;
+        stoneRenderer = GetComponent<SpriteRenderer>();
+        if (stoneRenderer == null) stoneRenderer = gameObject.AddComponent<SpriteRenderer>();
+        var player = FindAnyObjectByType<GravityPlayerController>();
+        var playerSprite = player != null ? player.GetComponent<SpriteRenderer>() : null;
+        stoneRenderer.sortingLayerID = playerSprite != null ? playerSprite.sortingLayerID : 0;
+        stoneRenderer.sortingOrder = playerSprite != null ? playerSprite.sortingOrder - 1 : 4;
+        var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        stoneMaterial = new Material(shader);
+        stoneRenderer.sharedMaterial = stoneMaterial;
+        idleStone = CreateStone(false);
+        savedStone = CreateStone(true);
+        stoneRenderer.sprite = idleStone;
+    }
+
+    private void LateUpdate()
+    {
+        stoneRenderer.sprite = activated ? savedStone : idleStone;
+    }
+
+    private static Sprite CreateStone(bool saved)
+    {
+        // A world sprite lets the character pass in front of the stone.
+        var texture = new Texture2D(17, 46, TextureFormat.RGBA32, false);
+        texture.name = saved ? "Remembered stone" : "Resting stone";
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Clamp;
+        Color body = new Color(0.014f, 0.031f, 0.035f);
+        Color rune = saved ? new Color(0.27f, 0.36f, 0.19f) : new Color(0.09f, 0.14f, 0.12f);
+        var pixels = new Color[17 * 46];
+        for (int y = 0; y < 46; y++)
+        for (int x = 0; x < 17; x++)
+        {
+            Color color = body;
+            if (y == 42 && x > 0 && x < 16) color = new Color(0.1f, 0.14f, 0.115f);
+            if ((x == 8 && y >= 12 && y <= 35) || (y == 29 && x >= 3 && x <= 13) || (y == 20 && x >= 5 && x <= 11)) color = rune;
+            pixels[y * 17 + x] = color;
+        }
+        texture.SetPixels(pixels);
+        texture.Apply(false, true);
+        return Sprite.Create(texture, new Rect(0f, 0f, 17f, 46f), new Vector2(0.5f, 0f), 10f);
+    }
+
+    private void OnDestroy()
+    {
+        if (idleStone != null) { Destroy(idleStone.texture); Destroy(idleStone); }
+        if (savedStone != null) { Destroy(savedStone.texture); Destroy(savedStone); }
+        if (stoneMaterial != null) Destroy(stoneMaterial);
     }
 
     private void OnTriggerStay2D(Collider2D other)
@@ -60,6 +112,7 @@ public class SparseCheckpoint : MonoBehaviour
 
     private void OnGUI()
     {
+        if (Event.current.type != EventType.Repaint) return;
         if (view == null) view = Camera.main;
         if (view == null || !view.orthographic) return;
         Vector3 point = view.WorldToScreenPoint(transform.position);
@@ -67,14 +120,6 @@ public class SparseCheckpoint : MonoBehaviour
         Color oldColor = GUI.color;
         float unit = Screen.height / (view.orthographicSize * 2f);
         Vector2 foot = new Vector2(point.x, Screen.height - point.y);
-        Rect stone = new Rect(foot.x - unit * 0.85f, foot.y - unit * 4.6f, unit * 1.7f, unit * 4.6f);
-        Fill(stone, new Color(0.014f, 0.031f, 0.035f));
-        Fill(new Rect(stone.x + unit * 0.15f, stone.y + unit * 0.2f, stone.width - unit * 0.3f, unit * 0.15f), new Color(0.1f, 0.14f, 0.115f));
-        Color rune = activated ? new Color(0.27f, 0.36f, 0.19f) : new Color(0.09f, 0.14f, 0.12f);
-        float thickness = Mathf.Max(1f, unit * 0.12f);
-        Fill(new Rect(foot.x - thickness * 0.5f, stone.y + unit, thickness, unit * 2.4f), rune);
-        Fill(new Rect(foot.x - unit * 0.5f, stone.y + unit * 1.6f, unit, thickness), rune);
-        Fill(new Rect(foot.x - unit * 0.35f, stone.y + unit * 2.5f, unit * 0.7f, thickness), rune);
         if (candidate != null || (activated && Time.unscaledTime - activatedAt < 3.5f))
         {
             if (labelStyle == null) labelStyle = new GUIStyle(GUI.skin.label)
@@ -86,15 +131,9 @@ public class SparseCheckpoint : MonoBehaviour
             labelStyle.normal.textColor = new Color(0.65f, 0.68f, 0.54f);
             GUI.color = Color.white;
             string text = activated ? "İZ KAYDEDİLDİ" : "KONTROL NOKTASI\nKısa bir an dur";
-            GUI.Label(new Rect(foot.x - unit * 13f, stone.y - unit * 4f, unit * 26f, unit * 3.5f), text, labelStyle);
+            labelStyle.Draw(new Rect(foot.x - unit * 13f, foot.y - unit * 8.6f, unit * 26f, unit * 3.5f), new GUIContent(text), false, false, false, false);
         }
         GUI.color = oldColor;
-    }
-
-    private static void Fill(Rect rect, Color color)
-    {
-        GUI.color = color;
-        GUI.DrawTexture(rect, Texture2D.whiteTexture);
     }
 
     private void OnDrawGizmosSelected()
