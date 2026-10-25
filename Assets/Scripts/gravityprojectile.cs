@@ -149,13 +149,19 @@ public class GravityProjectile : MonoBehaviour
         {
             hasTriggered = true;
 
-            // 1. Dünya yerçekimini fırlatılan yöne çevir
+            // 1. Yerçekimi Değiştirme Efekt Sesi
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayGravityFlip();
+            }
+
+            // 2. Dünya yerçekimini fırlatılan yöne çevir
             if (GravityManager.Instance != null)
             {
                 GravityManager.Instance.SetGravityDirection(throwDirection);
             }
 
-            // 2. Mikro Ekran Sarsıntısı (Screen Shake) tetikle
+            // 3. Mikro Ekran Sarsıntısı (Screen Shake) tetikle
             if (impactShakeMagnitude > 0f)
             {
                 if (CameraFollow2D.Instance != null)
@@ -168,7 +174,7 @@ public class GravityProjectile : MonoBehaviour
                 }
             }
 
-            // 3. Şok Dalgası Halkası + Kıvılcım Patlaması oluştur
+            // 4. Şok Dalgası Halkası + Kıvılcım Patlaması oluştur
             if (enableImpactVFX)
             {
                 Color vfxColor = projectileTrailColor;

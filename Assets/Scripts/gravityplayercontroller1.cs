@@ -214,6 +214,7 @@ public class GravityPlayerController : MonoBehaviour
     private Camera mainCam;
     private Vector2 moveInput;
     private bool isGrounded;
+    private bool wasGrounded; // İniş sesini algılamak için önceki kare durumu
     private float lastGroundedTime = -10f;
     private float lastJumpTime = -10f;
     private int currentAirThrowsUsed = 0;
@@ -356,10 +357,6 @@ public class GravityPlayerController : MonoBehaviour
         return grad;
     }
 
-    /// <summary>
-    /// Shift (Franklin Focus) moduna girildiğinde ekranın ortasını açık bırakıp köşelerini
-    /// yumuşakça karartan ve hafif sinematik bir odak veren radial Vignette dokusunu kodla üretir.
-    /// </summary>
     private void GenerateVignetteTexture()
     {
         int size = 128;
@@ -374,7 +371,6 @@ public class GravityPlayerController : MonoBehaviour
             for (int x = 0; x < size; x++)
             {
                 float dist = Vector2.Distance(new Vector2(x, y), center) / maxDist;
-                // Merkezde (0..0.45) tamamen şeffaf, kenarlara (0.45..1.1) doğru yumuşak koyu lacivert/altın sinematik geçiş
                 float alpha = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.42f, 1.05f, dist));
                 vignetteTex.SetPixel(x, y, new Color(0.02f, 0.05f, 0.1f, alpha));
             }
@@ -402,10 +398,6 @@ public class GravityPlayerController : MonoBehaviour
         playerTrail.colorGradient = isFocusActive ? focusTrailGradient : normalTrailGradient;
     }
 
-    /// <summary>
-    /// Shift (Focus) aktifken karakterin o anki pozisyonunda ve dönüş açısında
-    /// yarı saydam bir Hayalet Kopya (Afterimage / Ghost) bırakır ve yavaşça eriterek yok eder!
-    /// </summary>
     private void UpdateAfterimageTrail()
     {
         if (!enableFocusAfterimages || !isFocusActive || playerSpriteRenderer == null || playerSpriteRenderer.sprite == null)
@@ -453,7 +445,6 @@ public class GravityPlayerController : MonoBehaviour
             c.a = Mathf.Lerp(startColor.a, 0f, t);
             ghostSr.color = c;
 
-            // Hayalet izi erirken çok hafif küçülür
             ghostSr.transform.localScale = Vector3.Lerp(startScale, startScale * 0.85f, t);
             yield return null;
         }
@@ -541,7 +532,6 @@ public class GravityPlayerController : MonoBehaviour
         UpdatePlayerTrailEffect();
         UpdateAfterimageTrail();
 
-        // Ekran kenarı sinematik Vignette alpha geçişi
         float targetVig = (isFocusActive && enableFocusScreenVignette) ? vignetteIntensity : 0f;
         currentVignetteAlpha = Mathf.MoveTowards(currentVignetteAlpha, targetVig, Time.unscaledDeltaTime * 5f);
     }
@@ -621,6 +611,15 @@ public class GravityPlayerController : MonoBehaviour
     {
         if (active)
         {
+            // Eğer yeni giriyorsa Yavaşlama (Enter) sesini çal
+            if (!isFocusActive)
+            {
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlaySlowMoEnter();
+                }
+            }
+
             isFocusActive = true;
             float targetScale = Mathf.Clamp(focusTimeScale, 0.05f, 1f);
             Time.timeScale = targetScale;
@@ -628,8 +627,14 @@ public class GravityPlayerController : MonoBehaviour
         }
         else
         {
+            // Eğer normal zamana dönüyorsa Normale Dönüş (Exit) sesini çal
             if (isFocusActive)
             {
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlaySlowMoExit();
+                }
+
                 isFocusActive = false;
                 Time.timeScale = 1f;
                 Time.fixedDeltaTime = defaultFixedDeltaTime;
@@ -769,6 +774,7 @@ public class GravityPlayerController : MonoBehaviour
         if (Time.time - lastJumpTime < 0.08f)
         {
             isGrounded = false;
+            wasGrounded = false;
             return;
         }
 
@@ -808,10 +814,17 @@ public class GravityPlayerController : MonoBehaviour
 
         if (isGrounded)
         {
+            // Havadan bir yüzeye ilk düştüğü anda sesi çal:
+            if (!wasGrounded && AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayDrop(); // <-- Burayı PlayDrop() yaptık
+            }
+
             lastGroundedTime = Time.time;
             currentAirThrowsUsed = 0;
             currentFocusEnergy = maxFocusEnergy;
         }
+        wasGrounded = isGrounded;
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
@@ -921,6 +934,12 @@ public class GravityPlayerController : MonoBehaviour
 
     public void DieAndRespawn()
     {
+        // Ölüm sesini tetikle
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayDeath();
+        }
+
         SetFocusAbilityState(false);
         currentFocusEnergy = maxFocusEnergy;
         currentVignetteAlpha = 0f;
@@ -958,6 +977,7 @@ public class GravityPlayerController : MonoBehaviour
         }
 
         isGrounded = false;
+        wasGrounded = false;
         hasActiveSurfaceContact = false;
         currentAirThrowsUsed = 0;
 
@@ -1109,6 +1129,7 @@ public class GravityPlayerController : MonoBehaviour
     {
         lastJumpTime = Time.time;
         isGrounded = false;
+        wasGrounded = false;
         hasActiveSurfaceContact = false;
 
         Vector2 downDir = GravityManager.Instance != null
@@ -1119,6 +1140,12 @@ public class GravityPlayerController : MonoBehaviour
 
         float currentTangentSpeed = Vector2.Dot(rb.linearVelocity, surfaceTangent);
         rb.linearVelocity = (surfaceTangent * currentTangentSpeed) + (upDir * jumpForce);
+
+        // Zıplama sesini çal
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayJump();
+        }
     }
 
     private void TryThrowProjectile(Vector2 mouseScreenPos)
@@ -1149,6 +1176,12 @@ public class GravityPlayerController : MonoBehaviour
         GravityProjectile proj = Instantiate(projectilePrefab, spawnPos, Quaternion.identity);
         proj.speed *= projectileSpeedMultiplier;
         proj.Launch(throwDir);
+
+        // Mermi fırlatma sesini çal
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayThrowSound();
+        }
 
         if (inheritPlayerMomentumOnThrow && proj.TryGetComponent<Rigidbody2D>(out Rigidbody2D projRb))
         {
@@ -1208,10 +1241,9 @@ public class GravityPlayerController : MonoBehaviour
         Gizmos.color = new Color(1f, 0.15f, 0.15f, 0.9f);
         Gizmos.DrawWireSphere(transform.position, GetLethalHitboxRadiusWorld());
     }
-
+    
     private void OnGUI()
     {
-        // 1. Shift (Focus) aktifken ekran kenarı sinematik kararma/odak (Vignette) çizimi
         if (currentVignetteAlpha > 0.01f && vignetteTex != null)
         {
             GUI.color = new Color(1f, 1f, 1f, currentVignetteAlpha);
