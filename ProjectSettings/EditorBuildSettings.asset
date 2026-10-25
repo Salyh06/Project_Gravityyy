@@ -14,6 +14,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/AnaMenu_1.unity
     guid: 4b0bfcfa9b3224fc1a30fccc59e7aa46
+  - enabled: 0
+    path: Assets/Scenes/Bolum_1_Eren_SFX.unity
+    guid: d616e296b161fa54fad7c02174e98b24
   - enabled: 1
     path: Assets/Scenes/Bolum_1_Eren_Kaplama.unity
     guid: ee9bac40280abaf4bb47f19986e64653

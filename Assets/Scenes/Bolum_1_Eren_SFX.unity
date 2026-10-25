@@ -12792,13 +12792,13 @@ MonoBehaviour:
   deathSounds:
   - {fileID: 8300000, guid: 983ad2ee7158da143afb96b202c6731d, type: 3}
   buttonClickSounds: []
-  throwVolumeScale: 0.8
+  throwVolumeScale: 1
   gravityFlipVolumeScale: 0.85
   jumpVolumeScale: 0.6
   landVolumeScale: 0.5
   dropVolumeScale: 0.75
   slowMoVolumeScale: 0.7
-  deathVolumeScale: 1
+  deathVolumeScale: 0.16
   buttonClickVolumeScale: 0.8
 --- !u!82 &391967224
 AudioSource:
