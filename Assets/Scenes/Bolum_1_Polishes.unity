@@ -29458,7 +29458,7 @@ MonoBehaviour:
   groundDeceleration: 50
   airAcceleration: 25
   airDeceleration: 10
-  jumpForce: 14
+  jumpForce: 24
   jumpCoyoteTime: 0.2
   maxFallSpeed: 40
   fallGravityMultiplier: 2
@@ -29508,6 +29508,10 @@ MonoBehaviour:
   afterimageColor: {r: 0.2, g: 1, b: 0.9, a: 0.65}
   enableFocusScreenVignette: 1
   vignetteIntensity: 0.65
+  hudPixelFont: {fileID: 0}
+  showGravityCompassHUD: 1
+  showSpeedrunStatsHUD: 1
+  showControlHintsHUD: 1
 --- !u!50 &2124529647
 Rigidbody2D:
   serializedVersion: 5

@@ -6695,7 +6695,7 @@ MonoBehaviour:
   groundDeceleration: 50
   airAcceleration: 25
   airDeceleration: 10
-  jumpForce: 14
+  jumpForce: 24
   jumpCoyoteTime: 0.2
   maxFallSpeed: 40
   fallGravityMultiplier: 2

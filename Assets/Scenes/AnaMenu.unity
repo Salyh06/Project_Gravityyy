@@ -9192,7 +9192,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d0490f77cfb164db4b99ff47ce05c722, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MainMenuController
-  firstLevelSceneName: Bolum_1_Polishes_1
+  firstLevelSceneName: Bolum_1_Eren_Kaplama
   loadByBuildIndex: 0
   firstLevelBuildIndex: 1
   showBuiltInPixelMenu: 1

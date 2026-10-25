@@ -4,97 +4,120 @@ using UnityEngine.SceneManagement;
 using UnityEngine.InputSystem;
 #endif
 
-/// <summary>
-/// GELİŞMİŞ RETRO / PIXEL ART ANA MENÜ YÖNETİCİSİ:
-/// Düz dikdörtgen kutular yerine:
-/// - Pahlı/Kesik Köşeli (Chamfered / Beveled) Pixel Art Çerçeveler,
-/// - 3B Derinlik Gölgeleri (Drop Shadow) ve İç Parlama (Inner Bevel Highlight),
-/// - Köşe Süsleme İğneleri (Corner Ornaments),
-/// - Fareyle üzerine gelince (Hover) yumuşakça genişleyen (Smooth Lerp Scale), parlayan ve
-///   yanlarında hareketli oklar (`» ... «`) beliren interaktif butonlar,
-/// - Havada süzülen (Floating Bob) başlık animasyonu içerir!
-/// </summary>
+/// <summary>A subdued forest menu with interactive, colliding letter particles.</summary>
 public class MainMenuController : MonoBehaviour
 {
     [Header("1. Sahne Geçiş Ayarları")]
-    [Tooltip("Oyuna Başla'ya basıldığında yüklenecek ilk bölüm sahnesinin tam adı (Örn: Bolum_1_Eren_Kaplama).")]
     public string firstLevelSceneName = "Bolum_1_Eren_Kaplama";
-
-    [Tooltip("Eğer sahne adı yerine Build Settings'teki sıra numarasını (Index 1) kullanmak istersen bunu aç.")]
     public bool loadByBuildIndex = false;
     public int firstLevelBuildIndex = 1;
 
     [Header("2. Menü Görsel & Font Ayarları")]
-    [Tooltip("AÇIK OLURSA: Ekrana gelişmiş çerçeveli ve smooth animasyonlu Pixel Ana Menüyü çizer.")]
     public bool showBuiltInPixelMenu = true;
-
-    [Tooltip("İndirdiğin Pixel Font (.ttf) dosyasını buraya sürükle (Örn: Pixelify Sans).")]
     public Font customPixelFont;
-
-    [Tooltip("Oyunun Ana Başlığı.")]
     public string gameTitle = "Bok Böceğinin Boku";
-
-    [Tooltip("Oyunun Alt Başlığı.")]
     public string gameSubtitle = "Düşmeye Devam Baba";
 
     [Header("3. Arka Plan Canlandırma (Kamera Salınımı)")]
-    [Tooltip("Ana menüde arka plandaki ağaçların/dünyanın hafifçe sağa sola süzülmesini sağlar.")]
     public bool animateCameraGently = true;
     public float cameraSwayAmount = 1.2f;
     public float cameraSwaySpeed = 0.6f;
 
-    [Header("4. Buton Smooth Animasyon & Çerçeve Detayları")]
-    [Tooltip("Fareyle butonun üzerine gelindiğinde (Hover) yumuşak büyüme ve parlama hızı.")]
+    [Header("4. Buton Görünümü")]
     public float buttonHoverSmoothSpeed = 12f;
+    [Range(4f, 14f)] public float cornerCutSize = 6f;
 
-    [Tooltip("Butonların köşe kesim/pah miktarı (Pixel Art kademeli köşe).")]
-    [Range(4f, 14f)]
-    public float cornerCutSize = 8f;
+    [Header("5. Harf Yerçekimi & Geri Dönüş")]
+    [Tooltip("Harflerin yukarı doğru ivmesi (menü pikseli / saniye kare).")]
+    [Min(0f)] public float letterUpwardGravity = 160f;
+    [Tooltip("Harflerin yuvalarına dönüşteki yay kuvveti.")]
+    [Min(1f)] public float letterReturnSpring = 115f;
+    [Tooltip("Düşük değer daha çok sekme, yüksek değer daha sakin dönüş sağlar.")]
+    [Min(1f)] public float letterReturnDamping = 15f;
 
+    private const float ReferenceWidth = 1280f;
+    private const float ReferenceHeight = 720f;
+    private static readonly string[] ButtonLabels =
+        { "OYUNA BAŞLA", "NASIL OYNANIR", "OYUNDAN ÇIK", "GERİ DÖN" };
+    private static readonly Color Ink = new Color(0.006f, 0.015f, 0.021f, 1f);
+    private static readonly Color Paper = new Color(0.83f, 0.83f, 0.74f, 1f);
+    private static readonly Color Moss = new Color(0.23f, 0.27f, 0.16f, 1f);
+    private static readonly Color Clay = new Color(0.34f, 0.19f, 0.13f, 1f);
+
+    private sealed class Letter
+    {
+        public string text;
+        public Vector2 home;
+        public Vector2 position;
+        public Vector2 velocity;
+        public float angle;
+        public float angularVelocity;
+        public float radius;
+        public float phase;
+        public float returnDelay;
+    }
+
+    private sealed class LetterButton
+    {
+        public Rect rect;
+        public Letter[] letters;
+        public float hover;
+        public bool active;
+        public bool moving;
+        public float gustTime;
+        public float returnTime;
+    }
+
+    private readonly LetterButton[] buttons =
+        { new LetterButton(), new LetterButton(), new LetterButton(), new LetterButton() };
+    // Keep menu randomness independent of gameplay's UnityEngine.Random state.
+    private readonly System.Random letterRandom = new System.Random();
     private Vector3 initialCamPos;
     private Camera mainCam;
-    private bool showHowToPlayModal = false;
-
-    // 4 adet buton için smooth hover animasyon değerleri (0 = normal, 1 = tam hover)
-    private readonly float[] buttonHoverProgress = new float[4];
-
+    private bool showHowToPlayModal;
+    private bool hasFocus = true;
+    private int pressedButton = -1;
+    private int capturedControl;
     private Texture2D whiteTex;
     private Texture2D vignetteTex;
+    private GUIStyle letterStyle;
+    private GUIStyle titleStyle;
+    private GUIStyle subtitleStyle;
+    private GUIStyle controlsStyle;
+    private Font styledFont;
+
+    private float MenuScale => Mathf.Max(0.01f,
+        Mathf.Min(Screen.width / ReferenceWidth, Screen.height / ReferenceHeight));
+    private Vector2 MenuOffset => new Vector2(
+        (Screen.width - ReferenceWidth * MenuScale) * 0.5f,
+        (Screen.height - ReferenceHeight * MenuScale) * 0.5f);
 
     private void Awake()
     {
         Time.timeScale = 1f;
         mainCam = Camera.main;
-        if (mainCam != null)
-        {
-            initialCamPos = mainCam.transform.position;
-        }
-
-        whiteTex = new Texture2D(1, 1);
-        whiteTex.filterMode = FilterMode.Point;
+        if (mainCam != null) initialCamPos = mainCam.transform.position;
+        whiteTex = new Texture2D(1, 1) { filterMode = FilterMode.Point };
         whiteTex.SetPixel(0, 0, Color.white);
         whiteTex.Apply();
-
         GenerateMenuVignetteTexture();
+        buttons[0].rect = new Rect(460f, 346f, 360f, 58f);
+        buttons[1].rect = new Rect(460f, 440f, 360f, 58f);
+        buttons[2].rect = new Rect(460f, 534f, 360f, 58f);
+        buttons[3].rect = new Rect(510f, 572f, 260f, 52f);
     }
 
     private void GenerateMenuVignetteTexture()
     {
-        int size = 128;
-        vignetteTex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        vignetteTex.wrapMode = TextureWrapMode.Clamp;
-
-        Vector2 center = new Vector2(size * 0.5f, size * 0.5f);
-        float maxDist = size * 0.5f;
-
+        const int size = 128;
+        vignetteTex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            { wrapMode = TextureWrapMode.Clamp };
         for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
         {
-            for (int x = 0; x < size; x++)
-            {
-                float dist = Vector2.Distance(new Vector2(x, y), center) / maxDist;
-                float alpha = Mathf.SmoothStep(0.15f, 0.78f, Mathf.InverseLerp(0.2f, 1.05f, dist));
-                vignetteTex.SetPixel(x, y, new Color(0.02f, 0.03f, 0.08f, alpha));
-            }
+            float distance = Vector2.Distance(new Vector2(x, y), Vector2.one * (size * 0.5f)) / (size * 0.5f);
+            float alpha = Mathf.SmoothStep(0.04f, 0.72f, Mathf.InverseLerp(0.15f, 1.12f, distance));
+            vignetteTex.SetPixel(x, y, new Color(0.02f, 0.035f, 0.055f, alpha));
         }
         vignetteTex.Apply();
     }
@@ -103,44 +126,228 @@ public class MainMenuController : MonoBehaviour
     {
         if (animateCameraGently && mainCam != null)
         {
-            float offsetX = Mathf.Sin(Time.unscaledTime * cameraSwaySpeed) * cameraSwayAmount;
-            float offsetY = Mathf.Cos(Time.unscaledTime * cameraSwaySpeed * 0.7f) * (cameraSwayAmount * 0.4f);
-            mainCam.transform.position = initialCamPos + new Vector3(offsetX, offsetY, 0f);
+            float x = Mathf.Sin(Time.unscaledTime * cameraSwaySpeed) * cameraSwayAmount;
+            float y = Mathf.Cos(Time.unscaledTime * cameraSwaySpeed * 0.7f) * cameraSwayAmount * 0.4f;
+            mainCam.transform.position = initialCamPos + new Vector3(x, y, 0f);
         }
 
-        if (!showHowToPlayModal && WasQuickStartPressed())
+        if (!showBuiltInPixelMenu) return;
+        Vector2 pointer = (PointerPosition() - MenuOffset) / MenuScale;
+        // Substeps keep contacts and return springs stable across different frame rates.
+        float elapsed = Mathf.Min(Time.unscaledDeltaTime, 0.1f);
+        int steps = Mathf.Max(1, Mathf.CeilToInt(elapsed / (1f / 120f)));
+        float dt = elapsed / steps;
+        for (int i = 0; i < buttons.Length; i++)
         {
-            StartGameButton();
+            LetterButton button = buttons[i];
+            bool visible = showHowToPlayModal ? i == 3 : i < 3;
+            bool hovered = hasFocus && visible && button.rect.Contains(pointer);
+            bool active = hovered || (hasFocus && visible && pressedButton == i && PointerHeld());
+            if (active && !button.active) Scatter(button);
+            if (!active && button.active) BeginReturn(button);
+            button.active = active;
+            button.hover = Mathf.MoveTowards(button.hover, active ? 1f : 0f,
+                elapsed * Mathf.Max(1f, buttonHoverSmoothSpeed));
+            if (button.letters == null || !button.moving) continue;
+            for (int step = 0; step < steps; step++) SimulateLetters(button, dt);
         }
+
+        if (hasFocus && !showHowToPlayModal && pressedButton < 0 && WasQuickStartPressed())
+            StartGameButton();
+        if (hasFocus && showHowToPlayModal && WasBackPressed()) ToggleHowToPlayButton();
     }
 
-    private bool WasQuickStartPressed()
+    private static Vector2 PointerPosition()
+    {
+#if ENABLE_INPUT_SYSTEM
+        if (Mouse.current == null) return Vector2.one * -10000f;
+        Vector2 point = Mouse.current.position.ReadValue();
+#else
+        Vector2 point = Input.mousePosition;
+#endif
+        return new Vector2(point.x, Screen.height - point.y);
+    }
+
+    private static bool PointerHeld()
+    {
+#if ENABLE_INPUT_SYSTEM
+        return Mouse.current != null && Mouse.current.leftButton.isPressed;
+#else
+        return Input.GetMouseButton(0);
+#endif
+    }
+
+    private static bool WasQuickStartPressed()
     {
 #if ENABLE_INPUT_SYSTEM
         return Keyboard.current != null &&
-               (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.spaceKey.wasPressedThisFrame);
+            (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.spaceKey.wasPressedThisFrame);
 #else
         return Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space);
 #endif
     }
 
+    private static bool WasBackPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+#else
+        return Input.GetKeyDown(KeyCode.Escape);
+#endif
+    }
+
+    private float Range(float min, float max) => Mathf.Lerp(min, max, (float)letterRandom.NextDouble());
+
+    private void Scatter(LetterButton button)
+    {
+        if (button.letters == null) return;
+        button.moving = true;
+        button.gustTime = Range(0.12f, 0.35f);
+        foreach (Letter letter in button.letters)
+        {
+            letter.velocity = new Vector2(Range(-95f, 95f), Range(-155f, -70f));
+            letter.angularVelocity = Range(-160f, 160f);
+            letter.phase = Range(0f, Mathf.PI * 2f);
+        }
+    }
+
+    private void BeginReturn(LetterButton button)
+    {
+        button.returnTime = 0f;
+        if (button.letters == null) return;
+        foreach (Letter letter in button.letters)
+        {
+            // Preserve momentum; each letter catches its own spring a moment apart.
+            letter.returnDelay = Range(0f, 0.1f);
+            letter.velocity *= 0.48f;
+            letter.angularVelocity *= 0.4f;
+        }
+    }
+
+    private void SimulateLetters(LetterButton button, float dt)
+    {
+        if (!button.active)
+        {
+            AnimateReturn(button, dt);
+            return;
+        }
+
+        button.gustTime -= dt;
+        bool gust = button.gustTime <= 0f;
+        if (gust) button.gustTime = Range(0.25f, 0.6f);
+        float halfWidth = button.rect.width * 0.5f - 22f;
+        foreach (Letter letter in button.letters)
+        {
+            float sideways = Mathf.Sin(Time.unscaledTime * 2.7f + letter.phase) * 85f;
+            letter.velocity += new Vector2(sideways, -letterUpwardGravity) * dt;
+            if (gust) letter.velocity.x += Range(-40f, 40f);
+            letter.velocity *= Mathf.Exp(-0.24f * dt);
+            letter.position += letter.velocity * dt;
+            letter.angle = Mathf.Repeat(letter.angle + letter.angularVelocity * dt + 180f, 360f) - 180f;
+            KeepInside(button, letter, halfWidth);
+        }
+
+        // Pairwise contact impulses make letters bump and exchange sideways momentum.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            for (int i = 0; i < button.letters.Length; i++)
+            for (int j = i + 1; j < button.letters.Length; j++)
+                ResolveContact(button.letters[i], button.letters[j]);
+            foreach (Letter letter in button.letters) KeepInside(button, letter, halfWidth);
+        }
+    }
+
+    private void KeepInside(LetterButton button, Letter letter, float halfWidth)
+    {
+        float left = -halfWidth + letter.radius;
+        float right = halfWidth - letter.radius;
+        float top = -button.rect.height * 0.5f - 26f + letter.radius;
+        float bottom = button.rect.height * 0.5f + 7f - letter.radius;
+        if (letter.position.x < left || letter.position.x > right)
+        {
+            letter.position.x = Mathf.Clamp(letter.position.x, left, right);
+            letter.velocity.x = letter.position.x <= left ? Mathf.Abs(letter.velocity.x) * 0.8f : -Mathf.Abs(letter.velocity.x) * 0.8f;
+            letter.angularVelocity = -letter.angularVelocity * 0.7f;
+        }
+        if (letter.position.y < top)
+        {
+            letter.position.y = top;
+            // A fresh kick at the ceiling avoids a frozen row after a long hover.
+            letter.velocity.y = Mathf.Max(48f, Mathf.Abs(letter.velocity.y) * 0.72f);
+            letter.velocity.x += Range(-24f, 24f);
+            letter.angularVelocity += Range(-55f, 55f);
+        }
+        else if (letter.position.y > bottom)
+        {
+            letter.position.y = bottom;
+            letter.velocity.y = -Mathf.Abs(letter.velocity.y) * 0.7f;
+        }
+        letter.velocity = Vector2.ClampMagnitude(letter.velocity, 240f);
+        letter.angularVelocity = Mathf.Clamp(letter.angularVelocity, -200f, 200f);
+    }
+
+    private static void ResolveContact(Letter a, Letter b)
+    {
+        Vector2 delta = b.position - a.position;
+        float minimum = a.radius + b.radius;
+        float sqrDistance = delta.sqrMagnitude;
+        if (sqrDistance >= minimum * minimum) return;
+        float distance = Mathf.Sqrt(sqrDistance);
+        Vector2 normal = distance > 0.001f ? delta / distance : Vector2.right;
+        Vector2 correction = normal * ((minimum - distance) * 0.5f);
+        a.position -= correction;
+        b.position += correction;
+        float closingSpeed = Vector2.Dot(b.velocity - a.velocity, normal);
+        if (closingSpeed >= 0f) return;
+        Vector2 impulse = normal * (-(1f + 0.72f) * closingSpeed * 0.5f);
+        a.velocity -= impulse;
+        b.velocity += impulse;
+        float spin = (normal.x * impulse.y - normal.y * impulse.x) * 3f + impulse.x * 0.75f;
+        a.angularVelocity -= spin;
+        b.angularVelocity += spin;
+    }
+
+    private void AnimateReturn(LetterButton button, float dt)
+    {
+        button.returnTime += dt;
+        bool settled = true;
+        foreach (Letter letter in button.letters)
+        {
+            if (button.returnTime < letter.returnDelay)
+            {
+                letter.position += letter.velocity * dt;
+                letter.angle += letter.angularVelocity * dt;
+                settled = false;
+                continue;
+            }
+            Vector2 spring = (letter.home - letter.position) * letterReturnSpring - letter.velocity * letterReturnDamping;
+            letter.velocity += spring * dt;
+            letter.position += letter.velocity * dt;
+            float angleToHome = Mathf.DeltaAngle(letter.angle, 0f);
+            letter.angularVelocity += (angleToHome * letterReturnSpring - letter.angularVelocity * letterReturnDamping) * dt;
+            letter.angle += letter.angularVelocity * dt;
+            bool atRest = (letter.home - letter.position).sqrMagnitude < 0.01f &&
+                letter.velocity.sqrMagnitude < 0.1f && Mathf.Abs(angleToHome) < 0.15f && Mathf.Abs(letter.angularVelocity) < 0.5f;
+            if (!atRest) { settled = false; continue; }
+            letter.position = letter.home;
+            letter.velocity = Vector2.zero;
+            letter.angle = 0f;
+            letter.angularVelocity = 0f;
+        }
+        button.moving = !settled;
+    }
+
     public void StartGameButton()
     {
         Time.timeScale = 1f;
-
-        if (loadByBuildIndex)
-        {
-            SceneManager.LoadScene(firstLevelBuildIndex);
-        }
-        else if (!string.IsNullOrEmpty(firstLevelSceneName))
-        {
-            SceneManager.LoadScene(firstLevelSceneName);
-        }
+        if (loadByBuildIndex) SceneManager.LoadScene(firstLevelBuildIndex);
+        else if (!string.IsNullOrEmpty(firstLevelSceneName)) SceneManager.LoadScene(firstLevelSceneName);
     }
 
     public void ToggleHowToPlayButton()
     {
         showHowToPlayModal = !showHowToPlayModal;
+        ReleaseCapture();
     }
 
     public void QuitGameButton()
@@ -151,333 +358,220 @@ public class MainMenuController : MonoBehaviour
 #endif
     }
 
+    private void EnsureStyles()
+    {
+        if (letterStyle != null && styledFont == customPixelFont) return;
+        styledFont = customPixelFont;
+        letterStyle = MakeStyle(22, TextAnchor.MiddleCenter, Paper);
+        titleStyle = MakeStyle(46, TextAnchor.MiddleCenter, Paper);
+        subtitleStyle = MakeStyle(19, TextAnchor.MiddleCenter, new Color(0.64f, 0.66f, 0.59f));
+        controlsStyle = MakeStyle(19, TextAnchor.MiddleLeft, Paper);
+        controlsStyle.wordWrap = true;
+        for (int i = 0; i < buttons.Length; i++) BuildLetters(buttons[i], ButtonLabels[i]);
+    }
+
+    private GUIStyle MakeStyle(int size, TextAnchor alignment, Color color)
+    {
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            font = customPixelFont != null ? customPixelFont : GUI.skin.font,
+            fontSize = size, fontStyle = FontStyle.Bold, alignment = alignment,
+            padding = new RectOffset(), margin = new RectOffset(), richText = false
+        };
+        style.normal.textColor = color;
+        return style;
+    }
+
+    private void BuildLetters(LetterButton button, string text)
+    {
+        float width = letterStyle.CalcSize(new GUIContent(text)).x;
+        var letters = new System.Collections.Generic.List<Letter>();
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (char.IsWhiteSpace(text[i])) continue;
+            string glyph = text[i].ToString();
+            float glyphWidth = letterStyle.CalcSize(new GUIContent(glyph)).x;
+            float end = letterStyle.CalcSize(new GUIContent(text.Substring(0, i + 1))).x;
+            Vector2 home = new Vector2(end - glyphWidth * 0.5f - width * 0.5f, 0f);
+            letters.Add(new Letter
+            {
+                text = glyph, home = home, position = home,
+                radius = Mathf.Clamp(glyphWidth * 0.46f, 5f, 11f)
+            });
+        }
+        button.letters = letters.ToArray();
+        button.active = false;
+        button.moving = false;
+    }
+
     private void OnGUI()
     {
         if (!showBuiltInPixelMenu) return;
-
-        if (customPixelFont != null)
-        {
-            GUI.skin.font = customPixelFont;
-        }
-
-        float w = Screen.width;
-        float h = Screen.height;
-        float time = Time.unscaledTime;
-
-        // 1. Sinematik Kenar Karartma (Vignette) - Ortadaki ağaçları açık bırakır, kenarları odak-lar
-        if (vignetteTex != null)
-        {
-            GUI.color = Color.white;
-            GUI.DrawTexture(new Rect(0f, 0f, w, h), vignetteTex, ScaleMode.StretchToFill, true);
-        }
-
-        // 2. ÜST BAŞLIK PANELİ (Hafifçe yukarı-aşağı süzülen Floating Animasyon + Pahlı Pixel Çerçeve)
-        float floatOffset = Mathf.Sin(time * 2.2f) * 5f;
-        float headerW = Mathf.Min(680f, w * 0.85f);
-        float headerH = 152f;
-        float headerX = (w - headerW) * 0.5f;
-        float headerY = (h * 0.12f) + floatOffset;
-
-        Rect headerRect = new Rect(headerX, headerY, headerW, headerH);
-
-        DrawOrnateBeveledPanel(
-            headerRect,
-            new Color(0.06f, 0.09f, 0.16f, 0.92f),      // Koyu Gece Laciverti İç Dolgu
-            new Color(0.28f, 0.95f, 0.82f, 1f),         // Parlak Turkuaz Ana Çerçeve
-            new Color(0.12f, 0.45f, 0.52f, 0.85f),      // İç İnce Çerçeve (Inner Rim)
-            cornerCutSize + 2f,
-            true);
-
-        // Başlık Yazısı (Gölgeli + Parlak)
-        DrawShadowedText(
-            new Rect(headerX, headerY + 20f, headerW, 68f),
-            gameTitle,
-            50,
-            new Color(0.35f, 1f, 0.86f, 1f),
-            new Color(0.02f, 0.15f, 0.2f, 0.95f),
-            3f);
-
-        // Başlık ile Alt Başlık Arası Dekoratif Ayırıcı Çizgi ve Elmas Nokta
-        float dividerW = headerW * 0.45f;
-        float dividerX = headerX + (headerW - dividerW) * 0.5f;
-        float dividerY = headerY + 90f;
-        DrawSolidRect(new Rect(dividerX, dividerY, dividerW, 2f), new Color(1f, 0.82f, 0.3f, 0.45f));
-        DrawSolidRect(new Rect(headerX + headerW * 0.5f - 4f, dividerY - 3f, 8f, 8f), new Color(1f, 0.85f, 0.32f, 0.95f));
-
-        // Alt Başlık Yazısı
-        DrawShadowedText(
-            new Rect(headerX, headerY + 100f, headerW, 36f),
-            gameSubtitle,
-            20,
-            new Color(1f, 0.86f, 0.35f, 0.98f),
-            new Color(0.15f, 0.08f, 0.02f, 0.9f),
-            2f);
-
-        // 3. EĞER "NASIL OYNANIR" PENCERESİ AÇIKSA ONU ÇİZ
-        if (showHowToPlayModal)
-        {
-            DrawHowToPlayWindow(w, h);
-            return;
-        }
-
-        // 4. SMOOTH ANİMASYONLU & DETAYLI ÇERÇEVELİ MENÜ BUTONLARI
-        float btnW = 340f;
-        float btnH = 58f;
-        float btnX = (w - btnW) * 0.5f;
-        float startY = h * 0.47f;
-        float spacing = 78f;
-
-        if (DrawFancySmoothButton(0, new Rect(btnX, startY, btnW, btnH), "▶  OYUNA BAŞLA",
-            new Color(0.22f, 0.95f, 0.68f, 1f), new Color(0.06f, 0.14f, 0.15f, 0.92f)))
-        {
-            StartGameButton();
-        }
-
-        if (DrawFancySmoothButton(1, new Rect(btnX, startY + spacing, btnW, btnH), "?  NASIL OYNANIR",
-            new Color(0.32f, 0.85f, 1f, 1f), new Color(0.06f, 0.11f, 0.18f, 0.92f)))
-        {
-            ToggleHowToPlayButton();
-        }
-
-        if (DrawFancySmoothButton(2, new Rect(btnX, startY + spacing * 2f, btnW, btnH), "✕  OYUNDAN ÇIK",
-            new Color(1f, 0.42f, 0.48f, 1f), new Color(0.16f, 0.07f, 0.11f, 0.92f)))
-        {
-            QuitGameButton();
-        }
-    }
-
-    private void DrawHowToPlayWindow(float w, float h)
-    {
-        float modalW = Mathf.Min(680f, w * 0.88f);
-        float modalH = 340f;
-        float modalX = (w - modalW) * 0.5f;
-        float modalY = h * 0.41f;
-
-        Rect modalRect = new Rect(modalX, modalY, modalW, modalH);
-
-        DrawOrnateBeveledPanel(
-            modalRect,
-            new Color(0.05f, 0.08f, 0.14f, 0.96f),
-            new Color(1f, 0.85f, 0.28f, 1f),
-            new Color(0.45f, 0.35f, 0.12f, 0.8f),
-            cornerCutSize + 2f,
-            true);
-
-        GUIStyle textStyle = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleLeft,
-            fontSize = 18,
-            fontStyle = FontStyle.Bold,
-            wordWrap = true
-        };
-        textStyle.normal.textColor = new Color(0.92f, 0.96f, 1f, 1f);
+        EnsureStyles();
+        Matrix4x4 oldMatrix = GUI.matrix;
+        Color oldColor = GUI.color;
         GUI.color = Color.white;
+        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), vignetteTex, ScaleMode.StretchToFill, true);
+        Vector2 offset = MenuOffset;
+        GUI.matrix = oldMatrix * Matrix4x4.TRS(new Vector3(offset.x, offset.y, 0f), Quaternion.identity,
+            new Vector3(MenuScale, MenuScale, 1f));
 
-        string controlsText =
-            "• [ SOL TIK ] : 360° Yerçekimi Küresi Fırlat (Çarptığı an dünya döner!)\n\n" +
-            "• [ W, A, S, D ] : Ekrana Göre Yüzeyde Yürü ve Havada Süzül\n\n" +
-            "• [ SPACE ] : Mevcut Yerçekiminin Tersine Zıpla\n\n" +
-            "• [ R ] veya [ SAĞ TIK ] : Üzerinde Bulunduğun Yüzeye Yerçekimini Hizala\n\n" +
-            "• [ SHIFT (Havada) ] : Odak & Keskin Hava Manevra Modu (Yere değince dolar)";
-
-        GUI.Label(new Rect(modalX + 42f, modalY + 26f, modalW - 84f, 225f), controlsText, textStyle);
-
-        if (DrawFancySmoothButton(3, new Rect((w - 260f) * 0.5f, modalY + modalH - 74f, 260f, 52f), "←  GERİ DÖN",
-            new Color(1f, 0.85f, 0.28f, 1f), new Color(0.14f, 0.11f, 0.05f, 0.94f)))
+        DrawHeader();
+        if (showHowToPlayModal) DrawHowToPlayWindow();
+        else
         {
-            showHowToPlayModal = false;
+            if (DrawForestButton(0, Moss)) StartGameButton();
+            if (DrawForestButton(1, new Color(0.16f, 0.24f, 0.27f))) ToggleHowToPlayButton();
+            if (DrawForestButton(2, Clay)) QuitGameButton();
         }
+
+        GUI.matrix = oldMatrix;
+        GUI.color = oldColor;
     }
 
-    /// <summary>
-    /// Fareyle üzerine gelindiğinde (Hover) yumuşakça genişleyen, içten parlayan,
-    /// pahlı (kesik köşeli) çerçeveye, 3B alt gölgeye ve hareketli yan oklara sahip buton çizer.
-    /// </summary>
-    private bool DrawFancySmoothButton(int index, Rect baseRect, string label, Color accentColor, Color darkBgColor)
+    private void DrawHeader()
     {
-        Vector2 mousePos = Event.current.mousePosition;
-        bool isHovered = baseRect.Contains(mousePos);
-
-        // Smooth Hover geçişi (Time.unscaledDeltaTime ile yumuşak büyüme/küçülme)
-        if (Event.current.type == EventType.Repaint)
-        {
-            float target = isHovered ? 1f : 0f;
-            buttonHoverProgress[index] = Mathf.MoveTowards(
-                buttonHoverProgress[index],
-                target,
-                Time.unscaledDeltaTime * buttonHoverSmoothSpeed);
-        }
-
-        float hoverT = Mathf.SmoothStep(0f, 1f, buttonHoverProgress[index]);
-
-        // Hover oldukça buton yatayda hafifçe genişler ve 2 piksel yukarı kalkar!
-        float extraWidth = hoverT * 24f;
-        float extraHeight = hoverT * 4f;
-        float liftY = hoverT * -2f;
-
-        Rect animRect = new Rect(
-            baseRect.x - extraWidth * 0.5f,
-            baseRect.y + liftY - extraHeight * 0.5f,
-            baseRect.width + extraWidth,
-            baseRect.height + extraHeight);
-
-        // Renk geçişleri
-        Color currentBg = Color.Lerp(darkBgColor, Color.Lerp(darkBgColor, accentColor, 0.28f), hoverT);
-        Color currentOuterBorder = Color.Lerp(accentColor * 0.85f, Color.white, hoverT * 0.8f);
-        currentOuterBorder.a = 1f;
-        Color currentInnerRim = Color.Lerp(new Color(accentColor.r, accentColor.g, accentColor.b, 0.25f), accentColor, hoverT);
-
-        // Pahlı (Kesik Köşeli) ve 3B Gölgeli Panel Çizimi
-        DrawOrnateBeveledPanel(animRect, currentBg, currentOuterBorder, currentInnerRim, cornerCutSize, true, hoverT);
-
-        // Butonun Sol ve Sağ İç Kenarındaki Küçük Dekoratif Elmas/Çentikler
-        float diamondSize = 6f + hoverT * 2f;
-        Color diamondColor = Color.Lerp(accentColor * 0.7f, Color.white, hoverT);
-        diamondColor.a = 0.85f;
-        DrawSolidRect(new Rect(animRect.x + 14f, animRect.center.y - diamondSize * 0.5f, diamondSize, diamondSize), diamondColor);
-        DrawSolidRect(new Rect(animRect.xMax - 14f - diamondSize, animRect.center.y - diamondSize * 0.5f, diamondSize, diamondSize), diamondColor);
-
-        // Üzerine gelindiğinde yazının iki yanında beliren "» ... «" işaretleri
-        string displayLabel = hoverT > 0.35f ? $"»  {label}  «" : label;
-        Color textColor = Color.Lerp(accentColor, Color.white, hoverT * 0.9f);
-        int fontSize = Mathf.RoundToInt(Mathf.Lerp(20f, 22f, hoverT));
-
-        DrawShadowedText(
-            animRect,
-            displayLabel,
-            fontSize,
-            textColor,
-            new Color(0f, 0f, 0f, 0.85f),
-            2f);
-
-        return GUI.Button(animRect, GUIContent.none, GUIStyle.none);
+        float bob = Mathf.Sin(Time.unscaledTime * 1.25f) * 2f;
+        Rect header = new Rect(320f, 90f + bob, 640f, 136f);
+        DrawPanel(header, new Color(Ink.r, Ink.g, Ink.b, 0.94f), new Color(0.07f, 0.115f, 0.13f), 8f);
+        DrawText(new Rect(header.x + 14f, header.y + 14f, header.width - 28f, 60f), gameTitle, titleStyle);
+        DrawSolidRect(new Rect(554f, header.y + 85f, 172f, 1f), new Color(0.37f, 0.4f, 0.33f));
+        DrawSolidRect(new Rect(637f, header.y + 83f, 5f, 5f), Moss);
+        DrawText(new Rect(header.x, header.y + 96f, header.width, 27f), gameSubtitle, subtitleStyle);
     }
 
-    /// <summary>
-    /// Sivri köşeli sıradan dikdörtgen yerine; köşeleri kademeli kesik (Chamfered Pixel Art),
-    /// altında 3B derinlik gölgesi olan, çift katmanlı çerçeveye ve köşe iğnelerine sahip şık bir kutu çizer.
-    /// </summary>
-    private void DrawOrnateBeveledPanel(
-        Rect rect,
-        Color bgColor,
-        Color outerBorderColor,
-        Color innerRimColor,
-        float cut,
-        bool drawCornerPins,
-        float glowBoost = 0f)
+    private bool DrawForestButton(int index, Color accent)
     {
-        float c = Mathf.Floor(cut);
-
-        // 1. 3B Alt Derinlik Gölgesi (Drop Shadow)
-        Rect shadowRect = new Rect(rect.x + 4f, rect.y + 6f, rect.width, rect.height);
-        DrawChamferedRect(shadowRect, new Color(0f, 0f, 0f, 0.55f), c);
-
-        // 2. Eğer Hover/Glow varsa dışta yumuşak bir neon hale (Outer Glow)
-        if (glowBoost > 0.05f)
+        LetterButton button = buttons[index];
+        // Hit areas stay fixed even when the face lifts and letters leave their slots.
+        int control = GUIUtility.GetControlID(0x47524156 + index, FocusType.Passive, button.rect);
+        Event current = Event.current;
+        bool clicked = false;
+        switch (current.GetTypeForControl(control))
         {
-            Rect glowRect = new Rect(rect.x - 3f, rect.y - 3f, rect.width + 6f, rect.height + 6f);
-            Color glowCol = outerBorderColor;
-            glowCol.a = 0.22f * glowBoost;
-            DrawChamferedRect(glowRect, glowCol, c + 2f);
+            case EventType.MouseDown:
+                if (current.button == 0 && button.rect.Contains(current.mousePosition) && GUIUtility.hotControl == 0)
+                {
+                    GUIUtility.hotControl = control;
+                    capturedControl = control;
+                    pressedButton = index;
+                    current.Use();
+                }
+                break;
+            case EventType.MouseUp:
+                if (current.button == 0 && GUIUtility.hotControl == control)
+                {
+                    clicked = button.rect.Contains(current.mousePosition);
+                    ReleaseCapture();
+                    current.Use();
+                }
+                break;
+            case EventType.Ignore:
+                if (GUIUtility.hotControl == control) ReleaseCapture();
+                break;
         }
 
-        // 3. Dış Ana Çerçeve (Katman 1)
-        DrawChamferedRect(rect, outerBorderColor, c);
-
-        // 4. Ana İç Dolgu (Dış çerçeveden 3px içeride)
-        float border = 3f;
-        Rect innerRect = new Rect(rect.x + border, rect.y + border, rect.width - border * 2f, rect.height - border * 2f);
-        DrawChamferedRect(innerRect, bgColor, Mathf.Max(2f, c - border));
-
-        // 5. Üst İç Parlama Şeridi (Top Bevel Highlight - Kutuya 3B cam/metalik derinlik verir)
-        float highlightCut = Mathf.Max(2f, c - border);
-        DrawSolidRect(
-            new Rect(innerRect.x + highlightCut, innerRect.y + 2f, innerRect.width - highlightCut * 2f, 3f),
-            new Color(1f, 1f, 1f, 0.12f + glowBoost * 0.12f));
-
-        // 6. Alt İç Gölge Şeridi (Bottom Bevel Shade)
-        DrawSolidRect(
-            new Rect(innerRect.x + highlightCut, innerRect.yMax - 4f, innerRect.width - highlightCut * 2f, 3f),
-            new Color(0f, 0f, 0f, 0.35f));
-
-        // 7. İnce İç Çerçeve (Inner Rim - 6px içeride dekoratif ikinci çerçeve)
-        float rimOffset = 6f;
-        Rect rimRect = new Rect(rect.x + rimOffset, rect.y + rimOffset, rect.width - rimOffset * 2f, rect.height - rimOffset * 2f);
-        DrawChamferedOutlineOnly(rimRect, innerRimColor, Mathf.Max(2f, c - 4f), 1.5f);
-
-        // 8. Köşe Süsleme İğneleri (Corner Ornaments - 4 köşede küçük parlak piksel kareler)
-        if (drawCornerPins)
+        float hover = Mathf.SmoothStep(0f, 1f, button.hover);
+        Rect face = button.rect;
+        face.y += pressedButton == index ? 1f : -hover * 2f;
+        Color border = Color.Lerp(new Color(0.055f, 0.095f, 0.11f), Color.Lerp(accent, Ink, 0.25f), hover);
+        Color fill = Color.Lerp(Ink, new Color(0.016f, 0.031f, 0.038f), hover);
+        DrawPanel(face, fill, border, cornerCutSize);
+        DrawSolidRect(new Rect(face.x + 12f, face.y + 15f, 3f, face.height - 30f), Color.Lerp(border, accent, 0.4f + hover * 0.4f));
+        DrawSolidRect(new Rect(face.xMax - 17f, face.center.y - 2f, 4f, 4f), Color.Lerp(border, accent, hover * 0.7f));
+        letterStyle.normal.textColor = Color.Lerp(Paper, new Color(0.94f, 0.91f, 0.8f), hover * 0.65f);
+        foreach (Letter letter in button.letters)
         {
-            float pinSize = 4f;
-            float pinInset = c + 3f;
-            Color pinCol = Color.Lerp(outerBorderColor, Color.white, 0.35f);
-
-            // Sol-Üst, Sağ-Üst, Sol-Alt, Sağ-Alt köşe noktaları
-            DrawSolidRect(new Rect(rect.x + pinInset, rect.y + pinInset, pinSize, pinSize), pinCol);
-            DrawSolidRect(new Rect(rect.xMax - pinInset - pinSize, rect.y + pinInset, pinSize, pinSize), pinCol);
-            DrawSolidRect(new Rect(rect.x + pinInset, rect.yMax - pinInset - pinSize, pinSize, pinSize), pinCol);
-            DrawSolidRect(new Rect(rect.xMax - pinInset - pinSize, rect.yMax - pinInset - pinSize, pinSize, pinSize), pinCol);
+            Vector2 center = face.center + letter.position;
+            Matrix4x4 matrix = GUI.matrix;
+            // Apply rotation in reference-space before the canvas scale. RotateAroundPivot
+            // unclips its pivot into screen pixels and displaces letters on scaled Game views.
+            GUI.matrix = matrix * Matrix4x4.TRS(new Vector3(center.x, center.y, 0f),
+                Quaternion.Euler(0f, 0f, letter.angle), Vector3.one) *
+                Matrix4x4.Translate(new Vector3(-center.x, -center.y, 0f));
+            DrawText(new Rect(center.x - 22f, center.y - 19f, 44f, 38f), letter.text, letterStyle);
+            GUI.matrix = matrix;
         }
+        return clicked;
+    }
 
+    private void DrawHowToPlayWindow()
+    {
+        Rect modal = new Rect(290f, 282f, 700f, 360f);
+        DrawPanel(modal, new Color(Ink.r, Ink.g, Ink.b, 0.98f), new Color(0.08f, 0.12f, 0.105f), 8f);
+        DrawText(new Rect(330f, 304f, 620f, 28f), "NASIL OYNANIR", subtitleStyle);
+        string controls =
+            "SOL TIK   /   360° yerçekimi küresi fırlat\n\n" +
+            "W A S D   /   Yüzeyde yürü ve havada süzül\n\n" +
+            "SPACE   /   Yerçekiminin tersine zıpla\n\n" +
+            "R / SAĞ TIK   /   Yerçekimini yüzeye hizala\n\n" +
+            "SHIFT (HAVADA)   /   Odak ve keskin manevra";
+        DrawText(new Rect(338f, 348f, 604f, 210f), controls, controlsStyle);
+        if (DrawForestButton(3, Moss)) ToggleHowToPlayButton();
+    }
+
+    private void DrawPanel(Rect rect, Color fill, Color border, float cut)
+    {
+        DrawChamferedRect(new Rect(rect.x + 2f, rect.y + 5f, rect.width, rect.height), new Color(0.01f, 0.025f, 0.03f, 0.7f), cut);
+        DrawChamferedRect(rect, border, cut);
+        DrawChamferedRect(new Rect(rect.x + 2f, rect.y + 2f, rect.width - 4f, rect.height - 4f), fill, Mathf.Max(2f, cut - 2f));
+        DrawSolidRect(new Rect(rect.x + cut + 2f, rect.y + 3f, rect.width - cut * 2f - 4f, 1f), new Color(0.4f, 0.48f, 0.46f, 0.16f));
+        DrawSolidRect(new Rect(rect.x + cut, rect.yMax - 4f, rect.width - cut * 2f, 2f), new Color(0f, 0.015f, 0.025f, 0.5f));
+    }
+
+    private void DrawChamferedRect(Rect rect, Color color, float cut)
+    {
+        float c = Mathf.Floor(Mathf.Clamp(cut, 2f, Mathf.Min(rect.width, rect.height) * 0.4f));
+        float half = Mathf.Floor(c * 0.5f);
+        DrawSolidRect(new Rect(rect.x, rect.y + c, rect.width, rect.height - c * 2f), color);
+        DrawSolidRect(new Rect(rect.x + half, rect.y + half, rect.width - half * 2f, c - half), color);
+        DrawSolidRect(new Rect(rect.x + half, rect.yMax - c, rect.width - half * 2f, c - half), color);
+        DrawSolidRect(new Rect(rect.x + c, rect.y, rect.width - c * 2f, half), color);
+        DrawSolidRect(new Rect(rect.x + c, rect.yMax - half, rect.width - c * 2f, half), color);
+    }
+
+    private void DrawSolidRect(Rect rect, Color color)
+    {
+        GUI.color = color;
+        GUI.DrawTexture(rect, whiteTex);
         GUI.color = Color.white;
     }
 
-    /// <summary>
-    /// Köşeleri 2 kademeli piksel merdiveni şeklinde kesilmiş (Chamfered / Octagonal) dolu kutu çizer.
-    /// </summary>
-    private void DrawChamferedRect(Rect r, Color col, float cut)
+    private static void DrawText(Rect rect, string text, GUIStyle style)
     {
-        float c1 = Mathf.Floor(cut);
-        float c2 = Mathf.Floor(cut * 0.5f);
-
-        GUI.color = col;
-
-        // Orta tam genişlikteki gövde
-        GUI.DrawTexture(new Rect(r.x, r.y + c1, r.width, r.height - c1 * 2f), whiteTex);
-
-        // Üst ve alt ara kademe (Merdiven basamağı 1)
-        GUI.DrawTexture(new Rect(r.x + c2, r.y + c2, r.width - c2 * 2f, c1 - c2), whiteTex);
-        GUI.DrawTexture(new Rect(r.x + c2, r.yMax - c1, r.width - c2 * 2f, c1 - c2), whiteTex);
-
-        // En üst ve en alt dar şerit (Merdiven basamağı 2)
-        GUI.DrawTexture(new Rect(r.x + c1, r.y, r.width - c1 * 2f, c2), whiteTex);
-        GUI.DrawTexture(new Rect(r.x + c1, r.yMax - c2, r.width - c1 * 2f, c2), whiteTex);
-    }
-
-    private void DrawChamferedOutlineOnly(Rect r, Color col, float cut, float thickness)
-    {
-        GUI.color = col;
-        // Üst ve Alt yatay çizgiler
-        GUI.DrawTexture(new Rect(r.x + cut, r.y, r.width - cut * 2f, thickness), whiteTex);
-        GUI.DrawTexture(new Rect(r.x + cut, r.yMax - thickness, r.width - cut * 2f, thickness), whiteTex);
-
-        // Sol ve Sağ dikey çizgiler
-        GUI.DrawTexture(new Rect(r.x, r.y + cut, thickness, r.height - cut * 2f), whiteTex);
-        GUI.DrawTexture(new Rect(r.xMax - thickness, r.y + cut, thickness, r.height - cut * 2f), whiteTex);
-    }
-
-    private void DrawSolidRect(Rect r, Color col)
-    {
-        GUI.color = col;
-        GUI.DrawTexture(r, whiteTex);
-    }
-
-    private void DrawShadowedText(Rect rect, string text, int fontSize, Color mainColor, Color shadowColor, float shadowOffset)
-    {
-        GUIStyle style = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = fontSize,
-            fontStyle = FontStyle.Bold
-        };
-
-        // Alt Gölge
-        style.normal.textColor = shadowColor;
-        GUI.color = Color.white;
-        GUI.Label(new Rect(rect.x + shadowOffset, rect.y + shadowOffset, rect.width, rect.height), text, style);
-
-        // Ana Metin
-        style.normal.textColor = mainColor;
+        Color color = style.normal.textColor;
+        style.normal.textColor = new Color(0.005f, 0.015f, 0.02f, 0.8f);
+        GUI.Label(new Rect(rect.x + 1f, rect.y + 2f, rect.width, rect.height), text, style);
+        style.normal.textColor = color;
         GUI.Label(rect, text, style);
+    }
+
+    private void ReleaseCapture()
+    {
+        if (capturedControl != 0 && GUIUtility.hotControl == capturedControl) GUIUtility.hotControl = 0;
+        capturedControl = 0;
+        pressedButton = -1;
+    }
+
+    private void OnApplicationFocus(bool focused)
+    {
+        hasFocus = focused;
+        if (!focused) ReleaseCapture();
+    }
+
+    private void OnDisable()
+    {
+        ReleaseCapture();
+        foreach (LetterButton button in buttons)
+        {
+            if (button.active) BeginReturn(button);
+            button.active = false;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (whiteTex != null) Destroy(whiteTex);
+        if (vignetteTex != null) Destroy(vignetteTex);
     }
 }

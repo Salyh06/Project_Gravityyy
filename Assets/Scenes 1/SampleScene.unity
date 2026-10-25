@@ -1168,7 +1168,7 @@ MonoBehaviour:
   groundDeceleration: 70
   airAcceleration: 40
   airDeceleration: 12
-  jumpForce: 14
+  jumpForce: 24
   maxFallSpeed: 20
   momentumMode: 1
   momentumRetentionMultiplier: 0.85

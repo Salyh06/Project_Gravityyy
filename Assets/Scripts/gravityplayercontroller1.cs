@@ -44,8 +44,9 @@ public class GravityPlayerController : MonoBehaviour
     public float airDeceleration = 8f;
 
     [Header("2. Zıplama ve Hızlı Serbest Düşüş (Fast Fall)")]
-    [Tooltip("Zıplama kuvveti (yerçekiminin tersi yönünde).")]
-    public float jumpForce = 15f;
+    [Tooltip("Zıplama kuvveti sabit 24. Sahne veya prefab değeri bunu değiştirmez.")]
+    public const float FixedJumpForce = 24f;
+    public float jumpForce = FixedJumpForce;
 
     [Tooltip("Zıplama tolerans süresi (saniye).")]
     public float jumpCoyoteTime = 0.2f;
@@ -213,6 +214,11 @@ public class GravityPlayerController : MonoBehaviour
     [Tooltip("Ekranın sol altında mini kontrol ipucu rozetleri ([R] Hizala, [SHIFT] Odak) gösterilsin mi?")]
     public bool showControlHintsHUD = true;
 
+    public bool IsGrounded => isGrounded;
+    public int CompletedJumpCount => completedJumpCount;
+    public int CurrentCheckpointIndex => currentCheckpointIndex;
+    public Vector3 CurrentRespawnPosition => currentCheckpointIndex > 0 ? checkpointSpawnPosition :
+        (customSpawnPoint != null ? customSpawnPoint.position : initialSpawnPosition);
     public bool IsFocusActive => isFocusActive;
     public float CurrentFocusEnergyNormalized => maxFocusEnergy > 0f ? Mathf.Clamp01(currentFocusEnergy / maxFocusEnergy) : 0f;
     public int DeathCount => deathCount;
@@ -230,6 +236,9 @@ public class GravityPlayerController : MonoBehaviour
     private bool isGrounded;
     private float lastGroundedTime = -10f;
     private float lastJumpTime = -10f;
+    private bool tutorialJumpInProgress;
+    private bool tutorialJumpLeftGround;
+    private int completedJumpCount;
     private int currentAirThrowsUsed = 0;
     private Quaternion targetRotation = Quaternion.identity;
 
@@ -257,11 +266,20 @@ public class GravityPlayerController : MonoBehaviour
 
     private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
     private readonly Collider2D[] hazardOverlapHits = new Collider2D[8];
+    private int currentCheckpointIndex;
+    private Vector3 checkpointSpawnPosition;
+    private int lastRespawnFrame = -1;
     private Vector3 initialSpawnPosition;
     private Quaternion initialSpawnRotation;
 
+    private void OnValidate()
+    {
+        jumpForce = FixedJumpForce;
+    }
+
     private void Awake()
     {
+        jumpForce = FixedJumpForce;
         rb = GetComponent<Rigidbody2D>();
         playerSpriteRenderer = GetComponent<SpriteRenderer>();
         rb.freezeRotation = true;
@@ -591,6 +609,7 @@ public class GravityPlayerController : MonoBehaviour
 
         CheckGrounded();
         CheckShrunkHazardHitbox();
+        UpdateJumpTutorialProgress();
 
         ReadPlayerInputs(
             out bool jumpPressed,
@@ -1004,8 +1023,22 @@ public class GravityPlayerController : MonoBehaviour
         return false;
     }
 
+    public bool TryActivateCheckpoint(int index, Vector3 spawnPosition)
+    {
+        // Old stones cannot roll progress back; passing them in midair does not save.
+        if (index <= currentCheckpointIndex || !isGrounded) return false;
+        currentCheckpointIndex = index;
+        checkpointSpawnPosition = spawnPosition;
+        return true;
+    }
+
     public void DieAndRespawn()
     {
+        // Physics can report several hazards from the old location in a single frame.
+        if (lastRespawnFrame == Time.frameCount) return;
+        lastRespawnFrame = Time.frameCount;
+        tutorialJumpInProgress = false;
+        tutorialJumpLeftGround = false;
         deathCount++;
         SetFocusAbilityState(false);
         currentFocusEnergy = maxFocusEnergy;
@@ -1031,11 +1064,17 @@ public class GravityPlayerController : MonoBehaviour
             playerTrail.Clear();
         }
 
-        Vector3 spawnPos = customSpawnPoint != null ? customSpawnPoint.position : initialSpawnPosition;
+        Vector3 spawnPos = CurrentRespawnPosition;
         rb.linearVelocity = Vector2.zero;
         rb.angularVelocity = 0f;
+        rb.position = spawnPos;
         transform.position = spawnPos;
-        transform.rotation = initialSpawnRotation;
+        // Both rare stones stand on horizontal, hazard-free floor.
+        transform.rotation = currentCheckpointIndex > 0 ? Quaternion.identity : initialSpawnRotation;
+        targetRotation = transform.rotation;
+        lastGroundedTime = -10f;
+        lastJumpTime = -10f;
+        lastContactSurfaceNormal = Vector2.up;
 
         if (playerTrail != null)
         {
@@ -1192,8 +1231,23 @@ public class GravityPlayerController : MonoBehaviour
         rb.linearVelocity = (surfaceTangent * newTangentSpeed) + (upDir * verticalSpeed);
     }
 
+    private void UpdateJumpTutorialProgress()
+    {
+        if (!tutorialJumpInProgress) return;
+        if (!isGrounded)
+        {
+            tutorialJumpLeftGround = true;
+            return;
+        }
+        if (!tutorialJumpLeftGround) return;
+        completedJumpCount++;
+        tutorialJumpInProgress = false;
+    }
+
     private void Jump()
     {
+        tutorialJumpInProgress = true;
+        tutorialJumpLeftGround = false;
         lastJumpTime = Time.time;
         isGrounded = false;
         hasActiveSurfaceContact = false;
@@ -1205,7 +1259,7 @@ public class GravityPlayerController : MonoBehaviour
         Vector2 surfaceTangent = new Vector2(upDir.y, -upDir.x);
 
         float currentTangentSpeed = Vector2.Dot(rb.linearVelocity, surfaceTangent);
-        rb.linearVelocity = (surfaceTangent * currentTangentSpeed) + (upDir * jumpForce);
+        rb.linearVelocity = (surfaceTangent * currentTangentSpeed) + (upDir * FixedJumpForce);
     }
 
     private void TryThrowProjectile(Vector2 mouseScreenPos)
