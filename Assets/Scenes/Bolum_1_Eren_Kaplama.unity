@@ -482,8 +482,8 @@ Transform:
   m_GameObject: {fileID: 18251918}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -402.87, y: 95.37, z: 0}
-  m_LocalScale: {x: 3, y: 3, z: 3}
+  m_LocalPosition: {x: -402.2661, y: 97.2308, z: 0}
+  m_LocalScale: {x: 5.0533996, y: 6.4851456, z: 3}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
@@ -68194,7 +68194,7 @@ MonoBehaviour:
   enableFocusScreenVignette: 1
   vignetteIntensity: 0.65
   hudPixelFont: {fileID: 12800000, guid: 748469c9ecb584fc9963e8b822644c96, type: 3}
-  showGravityCompassHUD: 1
+  showGravityCompassHUD: 0
   showSpeedrunStatsHUD: 1
   showControlHintsHUD: 0
 --- !u!50 &2124529647
@@ -68293,7 +68293,7 @@ Transform:
   m_GameObject: {fileID: 2124529644}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -500, y: 100, z: 0}
+  m_LocalPosition: {x: -502.9, y: 103.9, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
