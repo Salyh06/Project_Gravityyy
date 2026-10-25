@@ -11,8 +11,8 @@ using UnityEngine.InputSystem;
 /// 3) Havada bir noktaya doğru serbest düşerken yüksek düşüş hızlarına ulaşmasını,
 /// 4) Küçültülebilir Özel Ölüm Hitbox'ı (hazardHitboxScaleMultiplier) ile adil çarpışma sağlamasını,
 /// 5) GTA 5 Franklin "Focus / Manevra Modu" (Shift + Zoom + Zaman Yavaşlatma + Enerji Barı),
-/// 6) Havalı Kuyruk İzi (Trail Renderer) + Shift Modunda Ekran Kenarı Sinematik Atmosferi (Vignette/Tint)
-///    ve Cyberpunk/Celeste Tarzı HAYALET İZİ (Afterimage / Ghost Trail) içeren 2D Karakter Kontrolcüsü.
+/// 6) Havalı Kuyruk İzi (Trail Renderer) + Shift Modunda Hayalet İzi (Afterimage) ve Vignette,
+/// 7) ÖZEL PIXEL ART OYUN İÇİ HUD (Canlı 360° Yerçekimi Pusulası, Pahlı Odak Barı, Hız/Ölüm/Süre Göstergeleri) içeren 2D Karakter Kontrolcüsü.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class GravityPlayerController : MonoBehaviour
@@ -154,7 +154,7 @@ public class GravityPlayerController : MonoBehaviour
     [Range(0.2f, 1f)]
     public float focusFallSpeedDamping = 0.7f;
 
-    [Tooltip("Ekranda Odak/Manevra Barı gösterilsin mi?")]
+    [Tooltip("Ekranda Odak/Manevra Barı ve Pixel Art Oyun İçi HUD gösterilsin mi?")]
     public bool showFocusBarUI = true;
 
     [Header("9. Havalı Kuyruk İzi (Trail Effect) Ayarları")]
@@ -200,8 +200,22 @@ public class GravityPlayerController : MonoBehaviour
     [Range(0f, 1f)]
     public float vignetteIntensity = 0.65f;
 
+    [Header("11. Pixel Art Oyun İçi HUD (Pusula + Odak Barı + Sayaçlar)")]
+    [Tooltip("İndirdiğin Pixelify Sans (.ttf) fontunu buraya da sürükle ki oyun içi HUD ana menüyle birebir aynı piksel fontta olsun!")]
+    public Font hudPixelFont;
+
+    [Tooltip("Sol üstte 360° dönen Canlı Yerçekimi Pusulası ve Düşüş Hızı (km/s) gösterilsin mi?")]
+    public bool showGravityCompassHUD = true;
+
+    [Tooltip("Sağ üstte Süre (Timer) ve Ölüm Sayacı (Death Counter) rozeti gösterilsin mi?")]
+    public bool showSpeedrunStatsHUD = true;
+
+    [Tooltip("Ekranın sol altında mini kontrol ipucu rozetleri ([R] Hizala, [SHIFT] Odak) gösterilsin mi?")]
+    public bool showControlHintsHUD = true;
+
     public bool IsFocusActive => isFocusActive;
     public float CurrentFocusEnergyNormalized => maxFocusEnergy > 0f ? Mathf.Clamp01(currentFocusEnergy / maxFocusEnergy) : 0f;
+    public int DeathCount => deathCount;
 
     private Rigidbody2D rb;
     private Collider2D playerCollider;
@@ -224,13 +238,22 @@ public class GravityPlayerController : MonoBehaviour
     private bool isAligningToSurface = false;
 
     private float currentFocusEnergy;
+    private float smoothDisplayedFocusRatio = 1f;
     private bool isFocusActive = false;
     private float defaultFixedDeltaTime = 0.02f;
     private float baseCameraOrthoSize = -1f;
     private Texture2D uiWhiteTex;
     private Texture2D vignetteTex;
+    private Texture2D compassArrowTex;
+    private Texture2D compassRingTex;
     private float currentVignetteAlpha = 0f;
     private float afterimageTimer = 0f;
+
+    // HUD İstatistikleri ve Smooth Pusula Açısı
+    private int deathCount = 0;
+    private float runElapsedTime = 0f;
+    private float smoothCompassAngle = -90f;
+    private float alignFlashTimer = 0f;
 
     private readonly RaycastHit2D[] castHits = new RaycastHit2D[4];
     private readonly Collider2D[] hazardOverlapHits = new Collider2D[8];
@@ -257,6 +280,7 @@ public class GravityPlayerController : MonoBehaviour
         SetupSmoothDynamicCircleCollider();
         SetupPlayerTrailRenderer();
         GenerateVignetteTexture();
+        GenerateHUDTextures();
 
         if (TryGetComponent<LineRenderer>(out LineRenderer oldLine))
         {
@@ -356,10 +380,6 @@ public class GravityPlayerController : MonoBehaviour
         return grad;
     }
 
-    /// <summary>
-    /// Shift (Franklin Focus) moduna girildiğinde ekranın ortasını açık bırakıp köşelerini
-    /// yumuşakça karartan ve hafif sinematik bir odak veren radial Vignette dokusunu kodla üretir.
-    /// </summary>
     private void GenerateVignetteTexture()
     {
         int size = 128;
@@ -374,12 +394,73 @@ public class GravityPlayerController : MonoBehaviour
             for (int x = 0; x < size; x++)
             {
                 float dist = Vector2.Distance(new Vector2(x, y), center) / maxDist;
-                // Merkezde (0..0.45) tamamen şeffaf, kenarlara (0.45..1.1) doğru yumuşak koyu lacivert/altın sinematik geçiş
                 float alpha = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.42f, 1.05f, dist));
                 vignetteTex.SetPixel(x, y, new Color(0.02f, 0.05f, 0.1f, alpha));
             }
         }
         vignetteTex.Apply();
+    }
+
+    /// <summary>
+    /// HUD üzerindeki 360° Yerçekimi Pusulası için keskin Pixel Art Ok (Arrow) ve Çember (Ring) dokularını kodla üretir!
+    /// </summary>
+    private void GenerateHUDTextures()
+    {
+        uiWhiteTex = new Texture2D(1, 1);
+        uiWhiteTex.filterMode = FilterMode.Point;
+        uiWhiteTex.SetPixel(0, 0, Color.white);
+        uiWhiteTex.Apply();
+
+        // 1. Pixel Art Pusula Çemberi (32x32)
+        int ringSize = 32;
+        compassRingTex = new Texture2D(ringSize, ringSize, TextureFormat.RGBA32, false);
+        compassRingTex.filterMode = FilterMode.Point;
+        Vector2 rCenter = new Vector2(15.5f, 15.5f);
+        for (int y = 0; y < ringSize; y++)
+        {
+            for (int x = 0; x < ringSize; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), rCenter);
+                if (d >= 12.2f && d <= 14.8f)
+                {
+                    compassRingTex.SetPixel(x, y, new Color(0.28f, 0.95f, 0.82f, 0.9f));
+                }
+                else if (d < 12.2f)
+                {
+                    compassRingTex.SetPixel(x, y, new Color(0.04f, 0.07f, 0.14f, 0.85f));
+                }
+                else
+                {
+                    compassRingTex.SetPixel(x, y, Color.clear);
+                }
+            }
+        }
+        compassRingTex.Apply();
+
+        // 2. Sağa (+X) bakan keskin Pixel Art Pusula Oku (24x24) -> GUIUtility.RotateAroundPivot ile 360° döner!
+        int arrSize = 24;
+        compassArrowTex = new Texture2D(arrSize, arrSize, TextureFormat.RGBA32, false);
+        compassArrowTex.filterMode = FilterMode.Point;
+        for (int y = 0; y < arrSize; y++)
+        {
+            for (int x = 0; x < arrSize; x++)
+            {
+                compassArrowTex.SetPixel(x, y, Color.clear);
+
+                int dy = Mathf.Abs(y - 12);
+                // Ok gövdesi (Sol-orta)
+                if (x >= 4 && x <= 13 && dy <= 2)
+                {
+                    compassArrowTex.SetPixel(x, y, new Color(0.25f, 1f, 0.82f, 1f));
+                }
+                // Ok ucu (Sağa doğru sivrilen üçgen)
+                if (x >= 12 && x <= 20 && dy <= (20 - x))
+                {
+                    compassArrowTex.SetPixel(x, y, new Color(1f, 0.9f, 0.3f, 1f)); // Altın sarısı uç!
+                }
+            }
+        }
+        compassArrowTex.Apply();
     }
 
     private void UpdatePlayerTrailEffect()
@@ -402,10 +483,6 @@ public class GravityPlayerController : MonoBehaviour
         playerTrail.colorGradient = isFocusActive ? focusTrailGradient : normalTrailGradient;
     }
 
-    /// <summary>
-    /// Shift (Focus) aktifken karakterin o anki pozisyonunda ve dönüş açısında
-    /// yarı saydam bir Hayalet Kopya (Afterimage / Ghost) bırakır ve yavaşça eriterek yok eder!
-    /// </summary>
     private void UpdateAfterimageTrail()
     {
         if (!enableFocusAfterimages || !isFocusActive || playerSpriteRenderer == null || playerSpriteRenderer.sprite == null)
@@ -453,7 +530,6 @@ public class GravityPlayerController : MonoBehaviour
             c.a = Mathf.Lerp(startColor.a, 0f, t);
             ghostSr.color = c;
 
-            // Hayalet izi erirken çok hafif küçülür
             ghostSr.transform.localScale = Vector3.Lerp(startScale, startScale * 0.85f, t);
             yield return null;
         }
@@ -510,6 +586,9 @@ public class GravityPlayerController : MonoBehaviour
 
     private void Update()
     {
+        runElapsedTime += Time.deltaTime;
+        if (alignFlashTimer > 0f) alignFlashTimer -= Time.unscaledDeltaTime;
+
         CheckGrounded();
         CheckShrunkHazardHitbox();
 
@@ -541,9 +620,15 @@ public class GravityPlayerController : MonoBehaviour
         UpdatePlayerTrailEffect();
         UpdateAfterimageTrail();
 
-        // Ekran kenarı sinematik Vignette alpha geçişi
         float targetVig = (isFocusActive && enableFocusScreenVignette) ? vignetteIntensity : 0f;
         currentVignetteAlpha = Mathf.MoveTowards(currentVignetteAlpha, targetVig, Time.unscaledDeltaTime * 5f);
+
+        // HUD Bar ve Pusula yumuşak geçişleri
+        smoothDisplayedFocusRatio = Mathf.Lerp(smoothDisplayedFocusRatio, CurrentFocusEnergyNormalized, Time.unscaledDeltaTime * 14f);
+
+        Vector2 gravDir = GravityManager.Instance != null ? GravityManager.Instance.CurrentGravityDirection : Vector2.down;
+        float targetGravAngle = Mathf.Atan2(-gravDir.y, gravDir.x) * Mathf.Rad2Deg; // GUI koordinatında Y aşağı pozitiftir
+        smoothCompassAngle = Mathf.LerpAngle(smoothCompassAngle, targetGravAngle, Time.unscaledDeltaTime * 16f);
     }
 
     private float GetLethalHitboxRadiusWorld()
@@ -921,6 +1006,7 @@ public class GravityPlayerController : MonoBehaviour
 
     public void DieAndRespawn()
     {
+        deathCount++;
         SetFocusAbilityState(false);
         currentFocusEnergy = maxFocusEnergy;
         currentVignetteAlpha = 0f;
@@ -1010,6 +1096,7 @@ public class GravityPlayerController : MonoBehaviour
             rb.linearVelocity = Vector2.zero;
             currentAirThrowsUsed = 0;
             currentFocusEnergy = maxFocusEnergy;
+            alignFlashTimer = 0.45f; // HUD'da "YÜZEYE HİZALANDI" parlaması
 
             transform.rotation = targetRotation;
         }
@@ -1209,52 +1296,228 @@ public class GravityPlayerController : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position, GetLethalHitboxRadiusWorld());
     }
 
+    // =========================================================================
+    // PIXEL ART OYUN İÇİ HUD SİSTEMİ (Ana Menü Çerçeveleriyle Birebir Uyumlu)
+    // =========================================================================
     private void OnGUI()
     {
-        // 1. Shift (Focus) aktifken ekran kenarı sinematik kararma/odak (Vignette) çizimi
+        // 1. Shift (Focus) aktifken ekran kenarı sinematik kararma/odak (Vignette)
         if (currentVignetteAlpha > 0.01f && vignetteTex != null)
         {
             GUI.color = new Color(1f, 1f, 1f, currentVignetteAlpha);
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), vignetteTex, ScaleMode.StretchToFill, true);
         }
 
-        if (!enableFocusAbility || !showFocusBarUI) return;
+        if (!showFocusBarUI) return;
 
-        if (uiWhiteTex == null)
+        if (uiWhiteTex == null || compassRingTex == null)
         {
-            uiWhiteTex = new Texture2D(1, 1);
-            uiWhiteTex.SetPixel(0, 0, Color.white);
-            uiWhiteTex.Apply();
+            GenerateHUDTextures();
         }
 
-        float fillRatio = CurrentFocusEnergyNormalized;
+        if (hudPixelFont != null)
+        {
+            GUI.skin.font = hudPixelFont;
+        }
 
-        float barWidth = 260f;
-        float barHeight = 18f;
-        float x = (Screen.width - barWidth) * 0.5f;
-        float y = 28f;
+        // A) ÜST-ORTA: PAHLİ (CHAMFERED) PIXEL ÇERÇEVELİ ODAK & MANEVRA BARI
+        if (enableFocusAbility)
+        {
+            DrawOrnateFocusBarHUD();
+        }
 
-        GUI.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
-        GUI.DrawTexture(new Rect(x - 3f, y - 3f, barWidth + 6f, barHeight + 6f), uiWhiteTex);
+        // B) SOL-ÜST: CANLI 360° YERÇEKİMİ PUSULASI & ANLIK HIZ GÖSTERGESİ
+        if (showGravityCompassHUD)
+        {
+            DrawGravityCompassAndSpeedHUD();
+        }
 
-        GUI.color = new Color(0.2f, 0.22f, 0.28f, 0.9f);
-        GUI.DrawTexture(new Rect(x, y, barWidth, barHeight), uiWhiteTex);
+        // C) SAĞ-ÜST: SÜRE & ÖLÜM SAYACI ROZETİ (SPEEDRUN STATS)
+        if (showSpeedrunStatsHUD)
+        {
+            DrawSpeedrunStatsHUD();
+        }
 
-        Color activeColor = isFocusActive
-            ? new Color(1f, 0.85f, 0.15f, 1f)
-            : Color.Lerp(new Color(1f, 0.3f, 0.2f, 1f), new Color(0.15f, 0.95f, 0.65f, 1f), fillRatio);
+        // D) SOL-ALT: DURUMA DUYARLI MİNİ KONTROL ROZETLERİ ([R] HİZALA / [SHIFT] ODAK)
+        if (showControlHintsHUD)
+        {
+            DrawMiniControlBadgesHUD();
+        }
+    }
 
-        GUI.color = activeColor;
-        GUI.DrawTexture(new Rect(x, y, barWidth * fillRatio, barHeight), uiWhiteTex);
+    private void DrawOrnateFocusBarHUD()
+    {
+        float panelW = 310f;
+        float panelH = 44f;
+        float panelX = (Screen.width - panelW) * 0.5f;
+        float panelY = 18f;
+
+        Color borderCol = isFocusActive
+            ? new Color(1f, 0.88f, 0.25f, 1f)
+            : new Color(0.28f, 0.95f, 0.82f, 0.95f);
+
+        DrawHUDChamferedPanel(new Rect(panelX, panelY, panelW, panelH), new Color(0.05f, 0.08f, 0.15f, 0.9f), borderCol, 6f);
+
+        // Üst etiket
+        string title = isFocusActive ? "» ODAK MANEVRA AKTİF «" : "ODAK MANEVRA [SHIFT]";
+        Color titleCol = isFocusActive ? new Color(1f, 0.9f, 0.3f, 1f) : new Color(0.75f, 0.95f, 0.9f, 0.9f);
+        DrawHUDShadowedText(new Rect(panelX, panelY + 3f, panelW, 18f), title, 12, titleCol, TextAnchor.MiddleCenter);
+
+        // Bar Yatağı
+        float barX = panelX + 14f;
+        float barY = panelY + 23f;
+        float barW = panelW - 28f;
+        float barH = 12f;
+
+        DrawHUDSolidRect(new Rect(barX, barY, barW, barH), new Color(0.12f, 0.16f, 0.24f, 0.95f));
+
+        // Dolu Bar Kısmı (Bölmeli/Segmentli Pixel Art Görünümü)
+        Color fillCol = isFocusActive
+            ? new Color(1f, 0.85f, 0.18f, 1f)
+            : Color.Lerp(new Color(1f, 0.35f, 0.3f, 1f), new Color(0.22f, 0.95f, 0.72f, 1f), smoothDisplayedFocusRatio);
+
+        float filledWidth = barW * Mathf.Clamp01(smoothDisplayedFocusRatio);
+        if (filledWidth > 1f)
+        {
+            DrawHUDSolidRect(new Rect(barX, barY, filledWidth, barH), fillCol);
+            // Üst parlama çizgisi (Bevel Highlight)
+            DrawHUDSolidRect(new Rect(barX, barY, filledWidth, 3f), new Color(1f, 1f, 1f, 0.35f));
+        }
+
+        // Pixel Art Segment Ayırıcı Çentikler (Barı 10 bölmeli retro göstergeye çevirir)
+        for (int i = 1; i < 10; i++)
+        {
+            float tickX = barX + (barW * (i / 10f));
+            DrawHUDSolidRect(new Rect(tickX, barY, 2f, barH), new Color(0.05f, 0.08f, 0.15f, 0.85f));
+        }
+    }
+
+    private void DrawGravityCompassAndSpeedHUD()
+    {
+        float boxX = 20f;
+        float boxY = 18f;
+        float boxW = 215f;
+        float boxH = 58f;
+
+        Color borderCol = alignFlashTimer > 0f
+            ? new Color(1f, 0.9f, 0.3f, 1f)
+            : new Color(0.28f, 0.95f, 0.82f, 0.9f);
+
+        DrawHUDChamferedPanel(new Rect(boxX, boxY, boxW, boxH), new Color(0.05f, 0.08f, 0.15f, 0.9f), borderCol, 6f);
+
+        // Sol tarafta Dönen 360° Yerçekimi Pusulası Çemberi ve Oku
+        Rect compassRect = new Rect(boxX + 10f, boxY + 9f, 40f, 40f);
+        GUI.color = Color.white;
+        GUI.DrawTexture(compassRect, compassRingTex);
+
+        // Pusula Okunu mevcut yerçekimi açısına göre döndürerek çiz
+        Matrix4x4 oldMatrix = GUI.matrix;
+        Vector2 pivot = compassRect.center;
+        GUIUtility.RotateAroundPivot(smoothCompassAngle, pivot);
+        Rect arrowRect = new Rect(pivot.x - 14f, pivot.y - 14f, 28f, 28f);
+        GUI.DrawTexture(arrowRect, compassArrowTex);
+        GUI.matrix = oldMatrix;
+
+        // Sağ tarafta Yerçekimi Durumu ve Anlık Düşüş/Hareket Hızı (km/s)
+        float speedVal = rb != null ? rb.linearVelocity.magnitude : 0f;
+        string gravLabel = alignFlashTimer > 0f ? "HİZALANDI!" : (isGrounded ? "ZEMİNDE" : "SERBEST DÜŞÜŞ");
+        Color stateCol = alignFlashTimer > 0f
+            ? new Color(1f, 0.9f, 0.3f, 1f)
+            : (isGrounded ? new Color(0.35f, 1f, 0.75f, 1f) : new Color(0.45f, 0.88f, 1f, 1f));
+
+        DrawHUDShadowedText(new Rect(boxX + 58f, boxY + 8f, boxW - 64f, 20f), $"ÇEKİM: {gravLabel}", 12, stateCol, TextAnchor.MiddleLeft);
+
+        Color speedCol = speedVal > 28f ? new Color(1f, 0.85f, 0.3f, 1f) : new Color(0.9f, 0.96f, 1f, 0.95f);
+        DrawHUDShadowedText(new Rect(boxX + 58f, boxY + 28f, boxW - 64f, 22f), $"HIZ: {speedVal:F1} m/s", 14, speedCol, TextAnchor.MiddleLeft);
+    }
+
+    private void DrawSpeedrunStatsHUD()
+    {
+        float boxW = 185f;
+        float boxH = 54f;
+        float boxX = Screen.width - boxW - 20f;
+        float boxY = 18f;
+
+        DrawHUDChamferedPanel(new Rect(boxX, boxY, boxW, boxH), new Color(0.05f, 0.08f, 0.15f, 0.9f), new Color(0.28f, 0.95f, 0.82f, 0.9f), 6f);
+
+        int minutes = Mathf.FloorToInt(runElapsedTime / 60f);
+        float seconds = runElapsedTime % 60f;
+        string timeStr = minutes > 0 ? $"{minutes:00}:{seconds:00.0}" : $"{seconds:00.0} sn";
+
+        DrawHUDShadowedText(new Rect(boxX + 14f, boxY + 7f, boxW - 28f, 20f), $"SÜRE:  {timeStr}", 13, new Color(0.35f, 1f, 0.85f, 1f), TextAnchor.MiddleLeft);
+        DrawHUDShadowedText(new Rect(boxX + 14f, boxY + 27f, boxW - 28f, 20f), $"ÖLÜM:  {deathCount}", 13, new Color(1f, 0.55f, 0.55f, 0.95f), TextAnchor.MiddleLeft);
+    }
+
+    private void DrawMiniControlBadgesHUD()
+    {
+        float badgeY = Screen.height - 42f;
+
+        // Rozet 1: [SOL TIK] 360° Küre
+        DrawSingleKeyBadge(new Rect(20f, badgeY, 138f, 26f), "[SOL TIK] Küre", new Color(0.28f, 0.95f, 0.82f, 0.85f));
+
+        // Rozet 2: [R / SAĞ TIK] Yüzeye Hizala
+        Color alignBadgeCol = alignFlashTimer > 0f ? new Color(1f, 0.9f, 0.25f, 1f) : new Color(0.45f, 0.85f, 1f, 0.85f);
+        DrawSingleKeyBadge(new Rect(168f, badgeY, 165f, 26f), "[R / SAĞ TIK] Hizala", alignBadgeCol);
+    }
+
+    private void DrawSingleKeyBadge(Rect rect, string text, Color borderCol)
+    {
+        DrawHUDChamferedPanel(rect, new Color(0.05f, 0.08f, 0.15f, 0.82f), borderCol, 4f);
+        DrawHUDShadowedText(rect, text, 11, borderCol, TextAnchor.MiddleCenter);
+    }
+
+    private void DrawHUDChamferedPanel(Rect r, Color bgCol, Color borderCol, float cut)
+    {
+        float c = Mathf.Floor(cut);
+
+        // Alt Gölge
+        DrawHUDChamferedRect(new Rect(r.x + 3f, r.y + 4f, r.width, r.height), new Color(0f, 0f, 0f, 0.5f), c);
+
+        // Dış Çerçeve
+        DrawHUDChamferedRect(r, borderCol, c);
+
+        // İç Dolgu
+        float b = 2f;
+        Rect inner = new Rect(r.x + b, r.y + b, r.width - b * 2f, r.height - b * 2f);
+        DrawHUDChamferedRect(inner, bgCol, Mathf.Max(2f, c - b));
 
         GUI.color = Color.white;
-        GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
+    }
+
+    private void DrawHUDChamferedRect(Rect r, Color col, float cut)
+    {
+        float c1 = Mathf.Floor(cut);
+        float c2 = Mathf.Floor(cut * 0.5f);
+
+        GUI.color = col;
+        GUI.DrawTexture(new Rect(r.x, r.y + c1, r.width, r.height - c1 * 2f), uiWhiteTex);
+        GUI.DrawTexture(new Rect(r.x + c2, r.y + c2, r.width - c2 * 2f, c1 - c2), uiWhiteTex);
+        GUI.DrawTexture(new Rect(r.x + c2, r.yMax - c1, r.width - c2 * 2f, c1 - c2), uiWhiteTex);
+        GUI.DrawTexture(new Rect(r.x + c1, r.y, r.width - c1 * 2f, c2), uiWhiteTex);
+        GUI.DrawTexture(new Rect(r.x + c1, r.yMax - c2, r.width - c1 * 2f, c2), uiWhiteTex);
+    }
+
+    private void DrawHUDSolidRect(Rect r, Color col)
+    {
+        GUI.color = col;
+        GUI.DrawTexture(r, uiWhiteTex);
+        GUI.color = Color.white;
+    }
+
+    private void DrawHUDShadowedText(Rect rect, string text, int fontSize, Color color, TextAnchor align)
+    {
+        GUIStyle style = new GUIStyle(GUI.skin.label)
         {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 11,
+            alignment = align,
+            fontSize = fontSize,
             fontStyle = FontStyle.Bold
         };
-        string statusText = isFocusActive ? "ODAK MANEVRA AKTİF [SHIFT]" : "HAVA MANEVRA BARI [SHIFT]";
-        GUI.Label(new Rect(x, y - 1f, barWidth, barHeight + 2f), statusText, labelStyle);
+
+        style.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width, rect.height), text, style);
+
+        style.normal.textColor = color;
+        GUI.Label(rect, text, style);
     }
 }
