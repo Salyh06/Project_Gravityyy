@@ -5,7 +5,7 @@ using UnityEngine;
 [RequireComponent(typeof(BoxCollider2D), typeof(SpriteRenderer))]
 public class MushroomBounce : MonoBehaviour
 {
-    [Min(24f)] public float bounceSpeed = 34f;
+    [Min(24f)] public float bounceSpeed = 40f;
     [Min(0.1f)] public float bounceCooldown = 0.25f;
 
     private BoxCollider2D cap;
