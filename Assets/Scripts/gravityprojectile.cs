@@ -5,9 +5,10 @@ using UnityEngine;
 /// Karakterin fırlattığı nesne. Fırlatıldığı yönü hafızasında tutar, arkasında neon bir kuyruk izi (Trail) bırakır
 /// ve bir yüzeye (Ground katmanına) çarptığında:
 /// 1) Dünyanın yerçekimini o fırlatma yönüne çevirir,
-/// 2) Çarpışma noktasında büyüyen bir ŞOK DALGASI HALKASI (Shockwave Ring) oluşturur,
-/// 3) Etrafa 18 adet NEON KIVILCIM PARÇACIĞI (Particle Burst) saçar,
-/// 4) Kameraya MİKRO EKRAN SARSINTISI (Screen Shake) tetikler!
+/// 2) Çarpışma anında patlama/çarpma sesini (AudioManager) tetikler,
+/// 3) Çarpışma noktasında büyüyen bir ŞOK DALGASI HALKASI (Shockwave Ring) oluşturur,
+/// 4) Etrafa 18 adet NEON KIVILCIM PARÇACIĞI (Particle Burst) saçar,
+/// 5) Kameraya MİKRO EKRAN SARSINTISI (Screen Shake) tetikler!
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(CircleCollider2D))]
@@ -155,7 +156,13 @@ public class GravityProjectile : MonoBehaviour
                 GravityManager.Instance.SetGravityDirection(throwDirection);
             }
 
-            // 2. Mikro Ekran Sarsıntısı (Screen Shake) tetikle
+            // 2. Çarpma / Patlama sesini çal
+            if (AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayGravityFlip();
+            }
+
+            // 3. Mikro Ekran Sarsıntısı (Screen Shake) tetikle
             if (impactShakeMagnitude > 0f)
             {
                 if (CameraFollow2D.Instance != null)
@@ -168,7 +175,7 @@ public class GravityProjectile : MonoBehaviour
                 }
             }
 
-            // 3. Şok Dalgası Halkası + Kıvılcım Patlaması oluştur
+            // 4. Şok Dalgası Halkası + Kıvılcım Patlaması oluştur
             if (enableImpactVFX)
             {
                 Color vfxColor = projectileTrailColor;
@@ -242,10 +249,6 @@ public class GravityImpactVFXRunner : MonoBehaviour
         particleObj.transform.SetParent(transform, false);
 
         ParticleSystem ps = particleObj.AddComponent<ParticleSystem>();
-
-        // ÖNEMLİ DÜZELTME: Unity'de AddComponent<ParticleSystem>() yapıldığı an sistem otomatik olarak
-        // "Playing" (Oynuyor) durumunda başlar ve çalışırken main.duration değiştirilirse konsola kırmızı uyarı basar!
-        // Bu yüzden önce tamamen durdurup (StopEmittingAndClear), ayarları yapıp sonra Play() diyoruz:
         ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
 
         var main = ps.main;
