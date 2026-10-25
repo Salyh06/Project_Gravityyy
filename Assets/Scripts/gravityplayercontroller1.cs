@@ -19,9 +19,9 @@ public class GravityPlayerController : MonoBehaviour
 {
     public enum GravityShiftMomentumMode
     {
-        ResetToZero,           // 1. Anında Durdur: Eski hızı tamamen sıfırlar, yeni yöne sıfırdan düşmeye başlar.
-        KeepWorldMomentum,     // 2. Gerçek Fiziksel Savrulma (Atalet): Eski hızını korur, yeni yerçekimi seni kavisli bir yörüngeyle çeker.
-        RedirectSpeedToNewDown // 3. Hızı Yeni Yöne Aktar (Portal Tarzı): Ne kadar hızlı düşüyorsan, o hızın tamamını anında yeni yerçekimi yönüne çevirir!
+        ResetToZero,             // 1. Anında Durdur: Eski hızı tamamen sıfırlar, yeni yöne sıfırdan düşmeye başlar.
+        KeepWorldMomentum,       // 2. Gerçek Fiziksel Savrulma (Atalet): Eski hızını korur, yeni yerçekimi seni kavisli bir yörüngeyle çeker.
+        RedirectSpeedToNewDown   // 3. Hızı Yeni Yöne Aktar (Portal Tarzı): Ne kadar hızlı düşüyorsan, o hızın tamamını anında yeni yerçekimi yönüne çevirir!
     }
 
     [Header("1. Hareket ve İvmelenme (Acceleration & Momentum)")]
@@ -234,8 +234,10 @@ public class GravityPlayerController : MonoBehaviour
     private Camera mainCam;
     private Vector2 moveInput;
     private bool isGrounded;
+    private bool wasGrounded;
     private float lastGroundedTime = -10f;
     private float lastJumpTime = -10f;
+    private float lastRespawnTime = -10f; // Respawn anında düşme sesinin ölüm sesini ezmesini engeller
     private bool tutorialJumpInProgress;
     private bool tutorialJumpLeftGround;
     private int completedJumpCount;
@@ -419,9 +421,6 @@ public class GravityPlayerController : MonoBehaviour
         vignetteTex.Apply();
     }
 
-    /// <summary>
-    /// HUD üzerindeki 360° Yerçekimi Pusulası için keskin Pixel Art Ok (Arrow) ve Çember (Ring) dokularını kodla üretir!
-    /// </summary>
     private void GenerateHUDTextures()
     {
         uiWhiteTex = new Texture2D(1, 1);
@@ -429,7 +428,6 @@ public class GravityPlayerController : MonoBehaviour
         uiWhiteTex.SetPixel(0, 0, Color.white);
         uiWhiteTex.Apply();
 
-        // 1. Pixel Art Pusula Çemberi (32x32)
         int ringSize = 32;
         compassRingTex = new Texture2D(ringSize, ringSize, TextureFormat.RGBA32, false);
         compassRingTex.filterMode = FilterMode.Point;
@@ -455,7 +453,6 @@ public class GravityPlayerController : MonoBehaviour
         }
         compassRingTex.Apply();
 
-        // 2. Sağa (+X) bakan keskin Pixel Art Pusula Oku (24x24) -> GUIUtility.RotateAroundPivot ile 360° döner!
         int arrSize = 24;
         compassArrowTex = new Texture2D(arrSize, arrSize, TextureFormat.RGBA32, false);
         compassArrowTex.filterMode = FilterMode.Point;
@@ -466,15 +463,13 @@ public class GravityPlayerController : MonoBehaviour
                 compassArrowTex.SetPixel(x, y, Color.clear);
 
                 int dy = Mathf.Abs(y - 12);
-                // Ok gövdesi (Sol-orta)
                 if (x >= 4 && x <= 13 && dy <= 2)
                 {
                     compassArrowTex.SetPixel(x, y, new Color(0.25f, 1f, 0.82f, 1f));
                 }
-                // Ok ucu (Sağa doğru sivrilen üçgen)
                 if (x >= 12 && x <= 20 && dy <= (20 - x))
                 {
-                    compassArrowTex.SetPixel(x, y, new Color(1f, 0.9f, 0.3f, 1f)); // Altın sarısı uç!
+                    compassArrowTex.SetPixel(x, y, new Color(1f, 0.9f, 0.3f, 1f));
                 }
             }
         }
@@ -642,11 +637,10 @@ public class GravityPlayerController : MonoBehaviour
         float targetVig = (isFocusActive && enableFocusScreenVignette) ? vignetteIntensity : 0f;
         currentVignetteAlpha = Mathf.MoveTowards(currentVignetteAlpha, targetVig, Time.unscaledDeltaTime * 5f);
 
-        // HUD Bar ve Pusula yumuşak geçişleri
         smoothDisplayedFocusRatio = Mathf.Lerp(smoothDisplayedFocusRatio, CurrentFocusEnergyNormalized, Time.unscaledDeltaTime * 14f);
 
         Vector2 gravDir = GravityManager.Instance != null ? GravityManager.Instance.CurrentGravityDirection : Vector2.down;
-        float targetGravAngle = Mathf.Atan2(-gravDir.y, gravDir.x) * Mathf.Rad2Deg; // GUI koordinatında Y aşağı pozitiftir
+        float targetGravAngle = Mathf.Atan2(-gravDir.y, gravDir.x) * Mathf.Rad2Deg;
         smoothCompassAngle = Mathf.LerpAngle(smoothCompassAngle, targetGravAngle, Time.unscaledDeltaTime * 16f);
     }
 
@@ -725,6 +719,15 @@ public class GravityPlayerController : MonoBehaviour
     {
         if (active)
         {
+            // Yavaşlama moduna ilk kez giriyorsa ses efektini çal
+            if (!isFocusActive)
+            {
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlaySlowMoEnter();
+                }
+            }
+
             isFocusActive = true;
             float targetScale = Mathf.Clamp(focusTimeScale, 0.05f, 1f);
             Time.timeScale = targetScale;
@@ -732,8 +735,14 @@ public class GravityPlayerController : MonoBehaviour
         }
         else
         {
+            // Normal zamana dönüyorsa çıkış ses efektini çal
             if (isFocusActive)
             {
+                if (AudioManager.Instance != null)
+                {
+                    AudioManager.Instance.PlaySlowMoExit();
+                }
+
                 isFocusActive = false;
                 Time.timeScale = 1f;
                 Time.fixedDeltaTime = defaultFixedDeltaTime;
@@ -873,6 +882,7 @@ public class GravityPlayerController : MonoBehaviour
         if (Time.time - lastJumpTime < 0.08f)
         {
             isGrounded = false;
+            wasGrounded = false;
             return;
         }
 
@@ -912,10 +922,17 @@ public class GravityPlayerController : MonoBehaviour
 
         if (isGrounded)
         {
+            // Havadan zemine ilk iniş anında düşme sesini çal (Yeni doğmadıysa)
+            if (!wasGrounded && (Time.unscaledTime - lastRespawnTime > 0.15f) && AudioManager.Instance != null)
+            {
+                AudioManager.Instance.PlayDrop();
+            }
+
             lastGroundedTime = Time.time;
             currentAirThrowsUsed = 0;
             currentFocusEnergy = maxFocusEnergy;
         }
+        wasGrounded = isGrounded;
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
@@ -1027,7 +1044,6 @@ public class GravityPlayerController : MonoBehaviour
 
     public bool TryActivateCheckpoint(int index, Vector3 spawnPosition)
     {
-        // Old stones cannot roll progress back; passing them in midair does not save.
         if (index <= currentCheckpointIndex || !isGrounded) return false;
         currentCheckpointIndex = index;
         checkpointSpawnPosition = spawnPosition;
@@ -1036,15 +1052,27 @@ public class GravityPlayerController : MonoBehaviour
 
     public void DieAndRespawn()
     {
-        // Physics can report several hazards from the old location in a single frame.
         if (lastRespawnFrame == Time.frameCount) return;
         lastRespawnFrame = Time.frameCount;
+        lastRespawnTime = Time.unscaledTime;
+
         tutorialJumpInProgress = false;
         tutorialJumpLeftGround = false;
         deathCount++;
-        SetFocusAbilityState(false);
+        
+        // Önce odak modunu sessizce kapat (SlowMoExit sesi ölüm sesini bastırmasın)
+        isFocusActive = false;
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = defaultFixedDeltaTime;
+        
         currentFocusEnergy = maxFocusEnergy;
         currentVignetteAlpha = 0f;
+
+        // ÖLÜM SESİNİ TETİKLE
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayDeath();
+        }
 
         if (mainCam != null && mainCam.orthographic && baseCameraOrthoSize > 0f)
         {
@@ -1071,7 +1099,6 @@ public class GravityPlayerController : MonoBehaviour
         rb.angularVelocity = 0f;
         rb.position = spawnPos;
         transform.position = spawnPos;
-        // Both rare stones stand on horizontal, hazard-free floor.
         transform.rotation = currentCheckpointIndex > 0 ? Quaternion.identity : initialSpawnRotation;
         targetRotation = transform.rotation;
         lastGroundedTime = -10f;
@@ -1085,6 +1112,7 @@ public class GravityPlayerController : MonoBehaviour
         }
 
         isGrounded = false;
+        wasGrounded = true; // Doğduğu ilk karede düşme sesi çalmaması için true başlattık
         hasActiveSurfaceContact = false;
         currentAirThrowsUsed = 0;
 
@@ -1137,7 +1165,7 @@ public class GravityPlayerController : MonoBehaviour
             rb.linearVelocity = Vector2.zero;
             currentAirThrowsUsed = 0;
             currentFocusEnergy = maxFocusEnergy;
-            alignFlashTimer = 0.45f; // HUD'da "YÜZEYE HİZALANDI" parlaması
+            alignFlashTimer = 0.45f;
 
             transform.rotation = targetRotation;
         }
@@ -1255,8 +1283,14 @@ public class GravityPlayerController : MonoBehaviour
         lastJumpTime = Time.time;
         lastGroundedTime = -10f;
         isGrounded = false;
+        wasGrounded = false;
         hasActiveSurfaceContact = false;
         rb.linearVelocity = tangent * tangentSpeed + normal * Mathf.Max(FixedJumpForce, speed);
+
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayJump();
+        }
     }
 
     private void Jump()
@@ -1265,6 +1299,7 @@ public class GravityPlayerController : MonoBehaviour
         tutorialJumpLeftGround = false;
         lastJumpTime = Time.time;
         isGrounded = false;
+        wasGrounded = false;
         hasActiveSurfaceContact = false;
 
         Vector2 downDir = GravityManager.Instance != null
@@ -1275,6 +1310,12 @@ public class GravityPlayerController : MonoBehaviour
 
         float currentTangentSpeed = Vector2.Dot(rb.linearVelocity, surfaceTangent);
         rb.linearVelocity = (surfaceTangent * currentTangentSpeed) + (upDir * FixedJumpForce);
+
+        // Zıplama sesini tetikle
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayJump();
+        }
     }
 
     private void TryThrowProjectile(Vector2 mouseScreenPos)
@@ -1305,6 +1346,12 @@ public class GravityPlayerController : MonoBehaviour
         GravityProjectile proj = Instantiate(projectilePrefab, spawnPos, Quaternion.identity);
         proj.speed *= projectileSpeedMultiplier;
         proj.Launch(throwDir);
+
+        // Fırlatma sesini tetikle
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlayThrowSound();
+        }
 
         if (inheritPlayerMomentumOnThrow && proj.TryGetComponent<Rigidbody2D>(out Rigidbody2D projRb))
         {
@@ -1365,12 +1412,8 @@ public class GravityPlayerController : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position, GetLethalHitboxRadiusWorld());
     }
 
-    // =========================================================================
-    // PIXEL ART OYUN İÇİ HUD SİSTEMİ (Ana Menü Çerçeveleriyle Birebir Uyumlu)
-    // =========================================================================
     private void OnGUI()
     {
-        // 1. Shift (Focus) aktifken ekran kenarı sinematik kararma/odak (Vignette)
         if (currentVignetteAlpha > 0.01f && vignetteTex != null)
         {
             GUI.color = new Color(1f, 1f, 1f, currentVignetteAlpha);
@@ -1389,25 +1432,21 @@ public class GravityPlayerController : MonoBehaviour
             GUI.skin.font = hudPixelFont;
         }
 
-        // A) ÜST-ORTA: PAHLİ (CHAMFERED) PIXEL ÇERÇEVELİ ODAK & MANEVRA BARI
         if (enableFocusAbility)
         {
             DrawOrnateFocusBarHUD();
         }
 
-        // B) SOL-ÜST: CANLI 360° YERÇEKİMİ PUSULASI & ANLIK HIZ GÖSTERGESİ
         if (showGravityCompassHUD)
         {
             DrawGravityCompassAndSpeedHUD();
         }
 
-        // C) SAĞ-ÜST: SÜRE & ÖLÜM SAYACI ROZETİ (SPEEDRUN STATS)
         if (showSpeedrunStatsHUD)
         {
             DrawSpeedrunStatsHUD();
         }
 
-        // D) SOL-ALT: DURUMA DUYARLI MİNİ KONTROL ROZETLERİ ([R] HİZALA / [SHIFT] ODAK)
         if (showControlHintsHUD)
         {
             DrawMiniControlBadgesHUD();
@@ -1427,12 +1466,10 @@ public class GravityPlayerController : MonoBehaviour
 
         DrawHUDChamferedPanel(new Rect(panelX, panelY, panelW, panelH), new Color(0.05f, 0.08f, 0.15f, 0.9f), borderCol, 6f);
 
-        // Üst etiket
         string title = isFocusActive ? "» ODAK MANEVRA AKTİF «" : "ODAK MANEVRA [SHIFT]";
         Color titleCol = isFocusActive ? new Color(1f, 0.9f, 0.3f, 1f) : new Color(0.75f, 0.95f, 0.9f, 0.9f);
         DrawHUDShadowedText(new Rect(panelX, panelY + 3f, panelW, 18f), title, 12, titleCol, TextAnchor.MiddleCenter);
 
-        // Bar Yatağı
         float barX = panelX + 14f;
         float barY = panelY + 23f;
         float barW = panelW - 28f;
@@ -1440,7 +1477,6 @@ public class GravityPlayerController : MonoBehaviour
 
         DrawHUDSolidRect(new Rect(barX, barY, barW, barH), new Color(0.12f, 0.16f, 0.24f, 0.95f));
 
-        // Dolu Bar Kısmı (Bölmeli/Segmentli Pixel Art Görünümü)
         Color fillCol = isFocusActive
             ? new Color(1f, 0.85f, 0.18f, 1f)
             : Color.Lerp(new Color(1f, 0.35f, 0.3f, 1f), new Color(0.22f, 0.95f, 0.72f, 1f), smoothDisplayedFocusRatio);
@@ -1449,11 +1485,9 @@ public class GravityPlayerController : MonoBehaviour
         if (filledWidth > 1f)
         {
             DrawHUDSolidRect(new Rect(barX, barY, filledWidth, barH), fillCol);
-            // Üst parlama çizgisi (Bevel Highlight)
             DrawHUDSolidRect(new Rect(barX, barY, filledWidth, 3f), new Color(1f, 1f, 1f, 0.35f));
         }
 
-        // Pixel Art Segment Ayırıcı Çentikler (Barı 10 bölmeli retro göstergeye çevirir)
         for (int i = 1; i < 10; i++)
         {
             float tickX = barX + (barW * (i / 10f));
@@ -1474,12 +1508,10 @@ public class GravityPlayerController : MonoBehaviour
 
         DrawHUDChamferedPanel(new Rect(boxX, boxY, boxW, boxH), new Color(0.05f, 0.08f, 0.15f, 0.9f), borderCol, 6f);
 
-        // Sol tarafta Dönen 360° Yerçekimi Pusulası Çemberi ve Oku
         Rect compassRect = new Rect(boxX + 10f, boxY + 9f, 40f, 40f);
         GUI.color = Color.white;
         GUI.DrawTexture(compassRect, compassRingTex);
 
-        // Pusula Okunu mevcut yerçekimi açısına göre döndürerek çiz
         Matrix4x4 oldMatrix = GUI.matrix;
         Vector2 pivot = compassRect.center;
         GUIUtility.RotateAroundPivot(smoothCompassAngle, pivot);
@@ -1487,7 +1519,6 @@ public class GravityPlayerController : MonoBehaviour
         GUI.DrawTexture(arrowRect, compassArrowTex);
         GUI.matrix = oldMatrix;
 
-        // Sağ tarafta Yerçekimi Durumu ve Anlık Düşüş/Hareket Hızı (km/s)
         float speedVal = rb != null ? rb.linearVelocity.magnitude : 0f;
         string gravLabel = alignFlashTimer > 0f ? "HİZALANDI!" : (isGrounded ? "ZEMİNDE" : "SERBEST DÜŞÜŞ");
         Color stateCol = alignFlashTimer > 0f
@@ -1521,10 +1552,8 @@ public class GravityPlayerController : MonoBehaviour
     {
         float badgeY = Screen.height - 42f;
 
-        // Rozet 1: [SOL TIK] 360° Küre
         DrawSingleKeyBadge(new Rect(20f, badgeY, 138f, 26f), "[SOL TIK] Küre", new Color(0.28f, 0.95f, 0.82f, 0.85f));
 
-        // Rozet 2: [R / SAĞ TIK] Yüzeye Hizala
         Color alignBadgeCol = alignFlashTimer > 0f ? new Color(1f, 0.9f, 0.25f, 1f) : new Color(0.45f, 0.85f, 1f, 0.85f);
         DrawSingleKeyBadge(new Rect(168f, badgeY, 165f, 26f), "[R / SAĞ TIK] Hizala", alignBadgeCol);
     }
@@ -1539,13 +1568,9 @@ public class GravityPlayerController : MonoBehaviour
     {
         float c = Mathf.Floor(cut);
 
-        // Alt Gölge
         DrawHUDChamferedRect(new Rect(r.x + 3f, r.y + 4f, r.width, r.height), new Color(0f, 0f, 0f, 0.5f), c);
-
-        // Dış Çerçeve
         DrawHUDChamferedRect(r, borderCol, c);
 
-        // İç Dolgu
         float b = 2f;
         Rect inner = new Rect(r.x + b, r.y + b, r.width - b * 2f, r.height - b * 2f);
         DrawHUDChamferedRect(inner, bgCol, Mathf.Max(2f, c - b));
@@ -1582,7 +1607,7 @@ public class GravityPlayerController : MonoBehaviour
             fontStyle = FontStyle.Bold
         };
 
-        style.normal.textColor = new Color(0f, 0f, 0f, 0.85f);
+        style.normal.textColor = new Color(0f, 0f, 0.0f, 0.85f);
         GUI.color = Color.white;
         GUI.Label(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width, rect.height), text, style);
 
