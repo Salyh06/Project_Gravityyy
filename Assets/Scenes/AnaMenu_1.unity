@@ -15094,8 +15094,8 @@ MonoBehaviour:
   firstLevelBuildIndex: 1
   showBuiltInPixelMenu: 1
   customPixelFont: {fileID: 12800000, guid: 748469c9ecb584fc9963e8b822644c96, type: 3}
-  gameTitle: "Bok B\xF6ce\u011Finin Boku"
-  gameSubtitle: "D\xFC\u015Fmeye Devam Baba"
+  gameTitle: Gall
+  gameSubtitle: "Hep D\xFC\u015Feriz"
   animateCameraGently: 1
   cameraSwayAmount: 1.2
   cameraSwaySpeed: 0.6
